@@ -9,16 +9,32 @@ HEADERS = {
 }
 
 
+def get_next_buses_at_stop(stop_code):
+    url = "http://api.wmata.com/NextBusService.svc/json/jPredictions?StopID=%s" % stop_code
+    
+    output = requests.get(url=url, headers=HEADERS)
+    
+    bus_predictions = [bus for bus in output.json()["Predictions"]]
+    
+    print(bus_predictions)
+    
+    for bus in bus_predictions:
+        print(bus["RouteID"])
+        print(bus["DirectionText"])
+        print(bus["Minutes"])
+        print()
+
+
 def get_next_trains_at_station(station_code):
     url = "http://api.wmata.com/StationPrediction.svc/json/GetPrediction/%s" % station_code
 
     output = requests.get(url=url, headers=HEADERS)
     
-    next_train_times = [train["Destination"] for train in output.json()["Trains"]]
+    train_predictions = [train["Destination"] for train in output.json()["Trains"]]
     
-    print(next_train_times)
+    print(train_predictions)
     
-    for train in next_train_times:
+    for train in train_predictions:
         print(train["Destination"])
         print(train["Line"])
         print(train["LocationName"])
@@ -31,10 +47,10 @@ def get_next_trains_at_station(station_code):
     # parse output
 
 
-def main():
-    station_code = "B03"
+def main():    
+    get_next_trains_at_station("B03")
     
-    get_next_trains_at_station(station_code)
+    get_next_buses_at_stop("1001195")
 
 
 if __name__ == "__main__":
