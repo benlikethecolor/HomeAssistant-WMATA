@@ -1,0 +1,12 @@
+{
+    "config": {
+        "step": {
+            "api_key": {
+                "description": "Please provide the API key you created on the WMATA site",
+                "data": {
+                    "api_key": "[%key:common::config_flow::data::api_key%]"
+                }
+            }
+        }
+    }
+}
