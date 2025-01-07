@@ -2,6 +2,16 @@
 
 WORK IN PROGRESS
 
+Integration to connect with the WMATA API to report upcoming trains/buses at local stops. 
+
+## Installation
+
+Need to create an API key here https://developer.wmata.com/profile
+
+TODO: add steps on creating account
+
+testing with local install, failing to download with "Could not download, see log for details"
+
 NEED TO FULFILL THESE REQUIREMENTS
 https://developers.home-assistant.io/docs/core/integration-quality-scale/
 
