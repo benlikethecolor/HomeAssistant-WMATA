@@ -1,9 +1,9 @@
+from .const import HEADERS, URL
 from dataclasses import dataclass
 from enum import StrEnum
-import logging
 from random import choice, randrange
+import logging
 import requests
-from const import HEADERS, URL
 
 _LOGGER = logging.getLogger(__name__)
 

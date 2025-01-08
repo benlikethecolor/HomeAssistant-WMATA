@@ -1,12 +1,12 @@
 """Integration 101 Template integration using DataUpdateCoordinator."""
 from .const import DEFAULT_SCAN_INTERVAL
+from .wmata import WmataAPI, APIAuthError, Device, DeviceType
 from dataclasses import dataclass
 from datetime import timedelta
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY
 from homeassistant.core import DOMAIN, HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from wmata import WmataAPI, APIAuthError, Device, DeviceType
 import logging
 
 

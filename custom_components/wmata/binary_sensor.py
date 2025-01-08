@@ -1,20 +1,15 @@
 """Interfaces with the WMATA sensors."""
 
-import logging
-
-from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
-    BinarySensorEntity,
-)
+from .const import DOMAIN
+from .coordinator import WmataCoordinator
+from .wmata import Device, DeviceType
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
-from .wmata import Device, DeviceType
-from .const import DOMAIN
-from .coordinator import WmataCoordinator
+import logging
 
 _LOGGER = logging.getLogger(__name__)
 

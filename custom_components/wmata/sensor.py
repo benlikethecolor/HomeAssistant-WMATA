@@ -1,9 +1,9 @@
 """Interfaces with the WMATA api sensors."""
 
 
-from .wmata import Device, DeviceType
 from .const import DOMAIN
 from .coordinator import WmataCoordinator
+from .wmata import Device, DeviceType
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTemperature
