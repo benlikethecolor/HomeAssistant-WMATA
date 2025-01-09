@@ -45,17 +45,20 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
 
     # initialize a listener for config flow options changes
     # see config_flow for defining an options setting that shows up as configure on the integration
-    cancel_update_listener = config_entry.add_update_listener(_async_update_listener)
+    cancel_update_listener = config_entry.add_update_listener(
+        _async_update_listener)
 
     # add the coordinator and update listener to hass data to make accessible throughout your integration
     # note: this will change on HA2024.6 to save on the config entry. # TODO add the 2024.6 update
-    hass.data[DOMAIN][config_entry.entry_id] = RuntimeData(coordinator, cancel_update_listener)
+    hass.data[DOMAIN][config_entry.entry_id] = RuntimeData(
+        coordinator, cancel_update_listener)
 
     # setup platforms (based on the list of entity types in PLATFORMS defined above)
     # this calls the async_setup method in each of your entity type files
     for platform in PLATFORMS:
         hass.async_create_task(
-            hass.config_entries.async_forward_entry_setup(config_entry, platform)
+            hass.config_entries.async_forward_entry_setup(
+                config_entry, platform)
         )
 
     return True
