@@ -2,10 +2,10 @@
 
 
 from __future__ import annotations
-from .const import DOMAIN
+from .const import DOMAIN, CONF_STATION_ID
 from .coordinator import WmataAPI, APIAuthError
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, CONF_API_KEY
+from homeassistant.const import CONF_HOST, CONF_API_KEY
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from typing import Any
@@ -18,7 +18,8 @@ _LOGGER = logging.getLogger(__name__)
 # TODO adjust the data schema to the data that you need
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_API_KEY, description={"suggested_value": "1234567890"}): str
+        vol.Required(CONF_API_KEY): str,
+        vol.Required(CONF_STATION_ID): str
     }
 )
 
@@ -121,10 +122,8 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="reconfigure",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        CONF_USERNAME, default=config_entry.data[CONF_USERNAME]
-                    ): str,
-                    vol.Required(CONF_PASSWORD): str,
+                    vol.Required(CONF_API_KEY, description={"suggested_value": "1234567890"}): str,
+                    vol.Required(CONF_STATION_ID): str
                 }
             ),
             errors=errors,
