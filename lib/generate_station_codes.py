@@ -8,28 +8,32 @@ HEADERS = {
     "api_key": api_key
 }
 
-def update_file(filename: str, data: dict):
-    new_file = open("../data/%s" % filename, "w", newline="")
-    writer = csv.DictWriter(new_file, data[0].keys())
-    writer.writeheader()
-    writer.writerows(data)
+def update_file(filename: str, data: str):
+    new_file = open(filename, "w")
+    new_file.write(data)
 
 
-def update_train_stations():
+def get_train_stations():
     output = requests.get(
         headers=HEADERS, 
         url="https://api.wmata.com/Rail.svc/json/jStations"
     )
+        
+    train_stations = output.json()["Stations"]
+    train_stations.sort(key=lambda x: x['Name'])
     
-    # print(json.dumps(output.json(), indent=4))
+    readme_output = '| Name | Line | Code\n|:-----|:----:|:-----|\n'
     
-    new_train_stations = output.json()["Stations"]
+    for station in train_stations:
+        readme_output += '| %s | %s | %s |\n' % (station['Name'], station['LineCode1'], station['Code'])
     
-    update_file("station_codes.csv", new_train_stations)
+    print(readme_output)
+    
+    update_file("METRO_STATION_CODES.md", readme_output)
     
 
 def main():
-    update_train_stations()
+    get_train_stations()
 
 
 if __name__ == "__main__":
