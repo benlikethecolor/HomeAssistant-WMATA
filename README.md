@@ -6,24 +6,33 @@ Integration to connect with the WMATA API to report upcoming trains/buses at loc
 
 ## Installation
 
-Need to create an API key here https://developer.wmata.com/profile
+To install this integration, you need the following:
 
-TODO: add steps on creating account
+- WMATA API key
+- Metro station ID
 
-testing with local install, failing to download with "Could not download, see log for details"
+Instructions on how to get these values are below. 
 
-NEED TO FULFILL THESE REQUIREMENTS
-https://developers.home-assistant.io/docs/core/integration-quality-scale/
+### Getting a WMATA API Key
 
-Bronze:
-- Can be easily set up through the UI.
-- The source code adheres to basic coding standards and development guidelines.
-- Automated tests that guard this integration can be configured correctly.
-- Offers basic end-user documentation that is enough to get users started step-by-step easily.
+To get a WMATA API key, follow these steps:
 
-Documentation on creating an integration:
-https://developers.home-assistant.io/docs/creating_integration_manifest
+1. Sign up for a new [WMATA developer account here](https://developer.wmata.com/)
+2. After your account is created, go to "Products", and select "Default Tier"
+3. On this page, enter the name of your new API key (ex: "Home assistant"), agree to the terms of use, and select "Subscribe"
+4. After your key is created, it will show you your API key, enter that in the installation steps
 
-Inspirations:
-- https://github.com/walrus416/ha-wmata/tree/master
-- https://github.com/msp1974/HAIntegrationExamples
+If you ever lose or forget your API details, you can find it [on your profile](https://developer.wmata.com/profile) under "Subscriptions". 
+
+### Getting Your Metro Station ID
+
+Unfortunately there's no good way to see a list of all of the bus station stop or metro station codes online outside of using the API. I've provided a list of the [metro station codes in this file](https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/METRO_STATION_CODES.md). Simply open it, find your local metro station, and add the code next to it. 
+
+**IMPORTANT NOTE:** if you see that your "local" metro station has two entries, make sure to pick the entry with the line you want. For example, say your local metro station is "Metro Center", and you ride the orange line. In this case, you would select the station code "C01", not "A01". 
+
+
+## Thanks
+
+- WMATA for providing this API
+- [@walrus416](https://github.com/walrus416) for making a [similar integration](https://github.com/walrus416/ha-wmata/tree/master) as a starting point
+- [@msp1974](https://github.com/msp1974) for providing [helpful integration examples](https://github.com/msp1974/HAIntegrationExamples)
