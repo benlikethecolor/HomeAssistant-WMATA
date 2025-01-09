@@ -1,8 +1,7 @@
 """Interfaces with the WMATA sensors."""
 
 from .const import DOMAIN
-from .coordinator import WmataCoordinator
-from .wmata import Device, DeviceType
+from .coordinator import WmataCoordinator, Device, DeviceType
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
