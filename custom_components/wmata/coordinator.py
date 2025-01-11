@@ -32,6 +32,8 @@ class WmataCoordinator(DataUpdateCoordinator):
         # TODO: do we need to confirm that the API works or is that covered in the config_flow?
         # doing it here anyways for now 
         self.connected: bool = False
+        _LOGGER.debug(f"API key: {self.api_key}")
+        _LOGGER.debug(f"API key type: {type(self.api_key)}")
         hass.async_create_task(self.async_validate_api_key())
 
         # set variables from options.  You need a default here incase options have not been set
@@ -59,7 +61,10 @@ class WmataCoordinator(DataUpdateCoordinator):
     async def async_validate_api_key(self) -> bool:
         async with aiohttp.ClientSession() as session:
             async with session.get("https://api.wmata.com/Misc/Validate", headers={"api_key": self.api_key}) as response:
+                _LOGGER.debug(f"API key validation response code: {response.status}")
+                _LOGGER.debug(f"API key validation response: {response}")
                 if response.status == 200:
+                    _LOGGER.debug("API key successfully validated")
                     self.connected = True
                     return True
                 raise APIAuthError("Invalid API key")
