@@ -43,7 +43,8 @@ class WmataCoordinator(DataUpdateCoordinator):
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN} ({config_entry.unique_id})",
+            # name=f"{DOMAIN} ({config_entry.unique_id})",
+            name=f"{DOMAIN}",
             update_method=self.async_update_data,
             update_interval=timedelta(seconds=self.poll_interval),
         )
