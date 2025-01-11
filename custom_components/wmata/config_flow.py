@@ -34,7 +34,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     api = WmataCoordinator(hass, data)
 
     try:
-        await hass.async_add_executor_job(api.async_validate_api_key())
+        await hass.async_add_executor_job(api.validate_api_key())
 
     except APIAuthError as err:
         raise InvalidAuth from err
