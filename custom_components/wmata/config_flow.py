@@ -2,7 +2,7 @@
 
 
 from __future__ import annotations
-from .const import DOMAIN, CONF_STATION_ID
+from .const import DOMAIN
 from .coordinator import APIAuthError, WmataCoordinator
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST, CONF_API_KEY, CONF_ID
