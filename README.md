@@ -30,6 +30,9 @@ Unfortunately there's no good way to see a list of all of the bus station stop o
 
 **IMPORTANT NOTE:** if you see that your "local" metro station has two entries, make sure to pick the entry with the line you want. For example, say your local metro station is "Metro Center", and you ride the orange line. In this case, you would select the station code "C01", not "A01". 
 
+## Future Improvments?
+
+Change the way that this is setup, so that you only need one station ID for stations with multiple codes. Just enter one or the other, have the code just search for both while you're there
 
 ## Thanks
 
