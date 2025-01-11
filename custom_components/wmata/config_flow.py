@@ -31,7 +31,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     # TODO: when adding user variables for local bus stop or train station, validate these inputs as well
 
-    api = WmataCoordinator(hass, data[CONF_API_KEY], data[CONF_ID])
+    api = WmataCoordinator(hass, data)
 
     try:
         await hass.async_add_executor_job(api.async_validate_api_key())
@@ -56,6 +56,7 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             # the form has been filled in and submitted, so process the data provided
+            
             try:
                 # validate that the setup data is valid and if not handle errors
                 # errors["base"] values must match the values in your strings.json file
