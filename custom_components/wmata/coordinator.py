@@ -36,7 +36,7 @@ class WmataCoordinator(DataUpdateCoordinator):
         # TODO: do we need to confirm that the API works or is that covered in the config_flow?
         # doing it here anyways for now 
         self.connected: bool = False
-        self.async_validate_api_key(self.api_key)
+        self.async_validate_api_key()
 
         # set variables from options.  You need a default here incase options have not been set
         self.poll_interval = DEFAULT_SCAN_INTERVAL  # default to 1min
