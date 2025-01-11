@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 from .const import DOMAIN, CONF_STATION_ID
-from .coordinator import WmataAPI, APIAuthError
+from .coordinator import APIAuthError, WmataCoordinator
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST, CONF_API_KEY
 from homeassistant.core import HomeAssistant, callback
@@ -31,10 +31,10 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     # TODO: when adding user variables for local bus stop or train station, validate these inputs as well
 
-    api = WmataAPI(data[CONF_API_KEY])
+    api = WmataCoordinator(data[CONF_API_KEY])
 
     try:
-        await hass.async_add_executor_job(api.validate_api_key())
+        await hass.async_add_executor_job(api.async_validate_api_key())
 
     except APIAuthError as err:
         raise InvalidAuth from err
