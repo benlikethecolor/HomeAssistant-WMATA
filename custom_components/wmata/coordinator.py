@@ -6,19 +6,15 @@ from homeassistant.const import CONF_API_KEY, CONF_ID
 from homeassistant.core import DOMAIN, HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 import logging
-import requests
-
+import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
-
 
 @dataclass
 class APIData:
     """Class to hold api data"""
-    # TODO: modify to update when new data comes in on train distances
     next_buses: list
     next_trains: list
-
 
 class WmataCoordinator(DataUpdateCoordinator):
     """Base coordinator class"""
@@ -36,7 +32,7 @@ class WmataCoordinator(DataUpdateCoordinator):
         # TODO: do we need to confirm that the API works or is that covered in the config_flow?
         # doing it here anyways for now 
         self.connected: bool = False
-        self.async_validate_api_key()
+        hass.async_create_task(self.async_validate_api_key())
 
         # set variables from options.  You need a default here incase options have not been set
         self.poll_interval = DEFAULT_SCAN_INTERVAL  # default to 1min
@@ -61,13 +57,12 @@ class WmataCoordinator(DataUpdateCoordinator):
         self.station = str
         
     async def async_validate_api_key(self) -> bool:
-        output = requests.get(
-            headers={"api_key": self.api_key}, url="https://api.wmata.com/Misc/Validate")
-
-        if output.status_code == 200:
-            self.connected = True
-            return True
-        raise APIAuthError("Invalid API key")
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://api.wmata.com/Misc/Validate", headers={"api_key": self.api_key}) as response:
+                if response.status == 200:
+                    self.connected = True
+                    return True
+                raise APIAuthError("Invalid API key")
 
     async def async_update_data(self):
         """Fetch data from API endpoint.
@@ -78,11 +73,10 @@ class WmataCoordinator(DataUpdateCoordinator):
 
         try:
             if not self.connected:
-                await self.hass.async_add_executor_job(self.async_validate_api_key)
+                await self.async_validate_api_key()
 
-            # devices = await self.hass.async_add_executor_job(self.api.get_devices)
-            next_buses = await self.hass.async_add_executor_job(self.async_get_next_buses_at_stop, self.stop)
-            next_trains = await self.hass.async_add_executor_job(self.async_get_next_trains_at_station, self.station)
+            next_buses = await self.async_get_next_buses_at_stop(self.stop)
+            next_trains = await self.async_get_next_trains_at_station(self.station)
 
         except APIAuthError as err:
             _LOGGER.error(err)
@@ -95,63 +89,20 @@ class WmataCoordinator(DataUpdateCoordinator):
         # what is returned here is stored in self.data by the DataUpdateCoordinator
         return APIData(next_buses=next_buses, next_trains=next_trains)
 
-    async def async_get_next_buses_at_stop(stop_code: str) -> list:
-        output = requests.get(
-            headers=HEADERS,
-            url="%s/NextBusService.svc/json/jPredictions?StopID=%s" % (
-                URL, stop_code)
-        )
+    async def async_get_next_buses_at_stop(self, stop_code: str) -> list:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{URL}/NextBusService.svc/json/jPredictions?StopID={stop_code}", headers=HEADERS) as response:
+                bus_predictions = await response.json()
+                return bus_predictions["Predictions"]
 
-        bus_predictions = [bus for bus in output.json()["Predictions"]]
-
-        # print(bus_predictions)
-
-        # for bus in bus_predictions:
-        #     print(bus["RouteID"])
-        #     print(bus["DirectionText"])
-        #     print(bus["Minutes"])
-        #     print()
-
-        return bus_predictions
-
-    async def async_get_next_trains_at_station(station_code: str) -> list:
-        output = requests.get(
-            headers=HEADERS,
-            url="%s/StationPrediction.svc/json/GetPrediction/%s" % (
-                URL, station_code)
-        )
-
-        train_predictions = [train["Destination"]
-                             for train in output.json()["Trains"]]
-
-        # print(train_predictions)
-
-        # for train in train_predictions:
-        #     print(train["Destination"])
-        #     print(train["Line"])
-        #     print(train["LocationName"])
-        #     print(train["Min"])
-        #     print()
-
-        return train_predictions
-
-    # def get_device_by_id(self, device_type: DeviceType, device_id: int) -> Device | None:
-    #     """Return device by device id."""
-    #     # called by the binary sensors and sensors to get their updated data from self.data
-    #     try:
-    #         return [device for device in self.data.devices if device.device_type == device_type and device.device_id == device_id][0]
-
-    #     except IndexError:
-    #         return None
-
+    async def async_get_next_trains_at_station(self, station_code: str) -> list:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{URL}/StationPrediction.svc/json/GetPrediction/{station_code}", headers=HEADERS) as response:
+                train_predictions = await response.json()
+                return train_predictions["Trains"]
 
 class APIAuthError(Exception):
     """Exception class for auth error."""
 
-
 class APIConnectionError(Exception):
     """Exception class for connection error."""
-
-
-# TODO: https://developer.wmata.com/api-details#api=54763629281d83086473f231&operation=5476362a281d830c946a3d6c
-# get bus schedule at stop
