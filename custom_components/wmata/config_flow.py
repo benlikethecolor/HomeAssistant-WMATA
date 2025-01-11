@@ -5,7 +5,7 @@ from __future__ import annotations
 from .const import DOMAIN, CONF_STATION_ID
 from .coordinator import APIAuthError, WmataCoordinator
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_HOST, CONF_API_KEY
+from homeassistant.const import CONF_HOST, CONF_API_KEY, CONF_ID
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from typing import Any
@@ -19,7 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_API_KEY): str,
-        vol.Required(CONF_STATION_ID): str
+        vol.Required(CONF_ID): str
     }
 )
 
@@ -31,7 +31,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     # TODO: when adding user variables for local bus stop or train station, validate these inputs as well
 
-    api = WmataCoordinator(data[CONF_API_KEY])
+    api = WmataCoordinator(hass, data[CONF_API_KEY], data[CONF_ID])
 
     try:
         await hass.async_add_executor_job(api.async_validate_api_key())
@@ -123,7 +123,7 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_API_KEY, description={"suggested_value": "1234567890"}): str,
-                    vol.Required(CONF_STATION_ID): str
+                    vol.Required(CONF_ID, description={"suggested_value": "A01"}): str
                 }
             ),
             errors=errors,
