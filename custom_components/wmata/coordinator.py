@@ -1,4 +1,3 @@
-"""Integration 101 Template integration using DataUpdateCoordinator."""
 from .const import DEFAULT_SCAN_INTERVAL, HEADERS, URL
 from dataclasses import dataclass
 from datetime import timedelta
