@@ -1,11 +1,8 @@
-from .const import DEFAULT_SCAN_INTERVAL, HEADERS, URL, CONF_STATION_ID
+from .const import DEFAULT_SCAN_INTERVAL, HEADERS, URL
 from dataclasses import dataclass
 from datetime import timedelta
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_API_KEY
 from homeassistant.core import DOMAIN, HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from random import choice, randrange
 import logging
 import requests
 
@@ -26,12 +23,13 @@ class WmataCoordinator(DataUpdateCoordinator):
     
     data: APIData
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, api_key: str, station_id: str = "", stop_id: str = "") -> None:
         """Initialize coordinator class"""
         
         # Set variables from values entered in config flow setup
-        self.api_key: str = config_entry.data[CONF_API_KEY]
-        self.station: str = config_entry.data[CONF_STATION_ID]
+        self.api_key = api_key
+        self.station = station_id
+        self.stop = stop_id
         
         # TODO: do we need to confirm that the API works or is that covered in the config_flow?
         # doing it here anyways for now 
