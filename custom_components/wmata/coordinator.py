@@ -1,12 +1,13 @@
-from .const import DEFAULT_SCAN_INTERVAL, HEADERS, URL
+from .const import DEFAULT_SCAN_INTERVAL, URL
 from dataclasses import dataclass
 from datetime import timedelta
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, CONF_ID
 from homeassistant.core import DOMAIN, HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-import logging
 import aiohttp
+import logging
+import requests
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,15 +27,15 @@ class WmataCoordinator(DataUpdateCoordinator):
         
         # Set variables from values entered in config flow setup
         self.api_key = config_entry[CONF_API_KEY]
+        self.headers = {"api_key": self.api_key}
         self.station = config_entry[CONF_ID]
         self.stop = ""
         
-        # TODO: do we need to confirm that the API works or is that covered in the config_flow?
-        # doing it here anyways for now 
         self.connected: bool = False
         _LOGGER.debug(f"API key: {self.api_key}")
         _LOGGER.debug(f"API key type: {type(self.api_key)}")
-        hass.async_create_task(self.async_validate_api_key())
+        
+        # hass.async_create_task(self.async_validate_api_key())
 
         # set variables from options.  You need a default here incase options have not been set
         self.poll_interval = DEFAULT_SCAN_INTERVAL  # default to 1min
@@ -59,16 +60,16 @@ class WmataCoordinator(DataUpdateCoordinator):
         self.stop = str
         self.station = str
         
-    async def async_validate_api_key(self) -> bool:
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://api.wmata.com/Misc/Validate", headers={"api_key": self.api_key}) as response:
-                _LOGGER.debug(f"API key validation response code: {response.status}")
-                _LOGGER.debug(f"API key validation response: {response}")
-                if response.status == 200:
-                    _LOGGER.debug("API key successfully validated")
-                    self.connected = True
-                    return True
-                raise APIAuthError("Invalid API key")
+    def validate_api_key(self) -> bool:
+        output = requests.get(
+            headers=self.headers, 
+            url="https://api.wmata.com/Misc/Validate"
+        )
+
+        if output.status_code == 200:
+            self.connected = True
+            return True
+        raise APIAuthError("Invalid API key")
 
     async def async_update_data(self):
         """Fetch data from API endpoint.
@@ -97,13 +98,13 @@ class WmataCoordinator(DataUpdateCoordinator):
 
     async def async_get_next_buses_at_stop(self, stop_code: str) -> list:
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{URL}/NextBusService.svc/json/jPredictions?StopID={stop_code}", headers=HEADERS) as response:
+            async with session.get(f"{URL}/NextBusService.svc/json/jPredictions?StopID={stop_code}", headers=self.headers) as response:
                 bus_predictions = await response.json()
                 return bus_predictions["Predictions"]
 
     async def async_get_next_trains_at_station(self, station_code: str) -> list:
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{URL}/StationPrediction.svc/json/GetPrediction/{station_code}", headers=HEADERS) as response:
+            async with session.get(f"{URL}/StationPrediction.svc/json/GetPrediction/{station_code}", headers=self.headers) as response:
                 train_predictions = await response.json()
                 return train_predictions["Trains"]
 
