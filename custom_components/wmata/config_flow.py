@@ -6,7 +6,7 @@ from .const import DOMAIN
 from .coordinator import APIAuthError, WmataCoordinator
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST, CONF_API_KEY, CONF_ID
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from typing import Any
 import logging
