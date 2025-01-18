@@ -1,4 +1,4 @@
-from .const import DEFAULT_SCAN_INTERVAL, URL
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, URL
 from dataclasses import dataclass
 from datetime import timedelta
 from homeassistant.config_entries import ConfigEntry
@@ -27,9 +27,9 @@ class WmataCoordinator(DataUpdateCoordinator):
         """Initialize coordinator class"""
 
         # Set variables from values entered in config flow setup
-        self.api_key = config_entry.data[CONF_API_KEY]
+        self.api_key = config_entry.data.get(CONF_API_KEY)
         self.headers = {"api_key": self.api_key}
-        self.station = config_entry.data[CONF_ID]
+        self.station = config_entry.data.get(CONF_ID)
 
         self.connected: bool = False
         _LOGGER.debug(f"API key: {self.api_key}")
