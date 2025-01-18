@@ -14,7 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 @dataclass
 class APIData:
     """Class to hold api data"""
-    next_buses: list
+    # next_buses: list
     next_trains: list
 
 
@@ -30,7 +30,7 @@ class WmataCoordinator(DataUpdateCoordinator):
         self.api_key = config_entry[CONF_API_KEY]
         self.headers = {"api_key": self.api_key}
         self.station = config_entry[CONF_ID]
-        self.stop = ""
+        # self.stop = ""
 
         self.connected: bool = False
         _LOGGER.debug(f"API key: {self.api_key}")
@@ -54,12 +54,11 @@ class WmataCoordinator(DataUpdateCoordinator):
         # data formats:
         # next_buses = [{"RouteID": "D6", "DirectionText": "South", "Minutes": 5}, ...]
         # next_trains = [{"Destination": "Glenmont", "Line": "Red", "LocationName": "Glenmont", "Min": 3}, ...]
-        self.next_buses = []
+        # self.next_buses = []
         self.next_trains = []
 
         # TODO: should be set by the user in the setup process
-        self.stop = str
-        self.station = str
+        # self.station = str
 
     async def async_validate_api_key(self) -> bool:
         async with aiohttp.ClientSession() as session:
@@ -87,7 +86,6 @@ class WmataCoordinator(DataUpdateCoordinator):
             if not self.connected:
                 await self.async_validate_api_key()
 
-            next_buses = await self.async_get_next_buses_at_stop(self.stop)
             next_trains = await self.async_get_next_trains_at_station(self.station)
 
         except APIAuthError as err:
@@ -99,14 +97,7 @@ class WmataCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Error communicating with API: {err}") from err
 
         # what is returned here is stored in self.data by the DataUpdateCoordinator
-        return APIData(next_buses=next_buses, next_trains=next_trains)
-
-    async def async_get_next_buses_at_stop(self, stop_code: str) -> list:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{URL}/NextBusService.svc/json/jPredictions?StopID={stop_code}", headers=self.headers) as response:
-                bus_predictions = await response.json()
-
-                return bus_predictions["Predictions"]
+        return APIData(next_trains=next_trains)
 
     async def async_get_next_trains_at_station(self, station_code: str) -> list:
         async with aiohttp.ClientSession() as session:
