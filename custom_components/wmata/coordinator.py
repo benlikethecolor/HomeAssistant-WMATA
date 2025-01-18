@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, CONF_ID
-from homeassistant.core import DOMAIN, HomeAssistant
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 import logging
 import aiohttp
@@ -27,16 +27,13 @@ class WmataCoordinator(DataUpdateCoordinator):
         """Initialize coordinator class"""
 
         # Set variables from values entered in config flow setup
-        self.api_key = config_entry[CONF_API_KEY]
+        self.api_key = config_entry.data[CONF_API_KEY]
         self.headers = {"api_key": self.api_key}
-        self.station = config_entry[CONF_ID]
-        # self.stop = ""
+        self.station = config_entry.data[CONF_ID]
 
         self.connected: bool = False
         _LOGGER.debug(f"API key: {self.api_key}")
         _LOGGER.debug(f"API key type: {type(self.api_key)}")
-
-        # hass.async_create_task(self.async_validate_api_key())
 
         # set variables from options.  You need a default here incase options have not been set
         self.poll_interval = DEFAULT_SCAN_INTERVAL  # default to 1min
