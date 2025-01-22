@@ -34,7 +34,7 @@ Unfortunately there's no good way to see a list of all of the bus station stop o
 
 Change the way that this is setup, so that you only need one station ID for stations with multiple codes. Just enter one or the other, have the code just search for both while you're there
 
-Currently not set up for buses, this will be a future improvement. 
+Currently not setup for buses, this will be a future improvement. 
 
 ## Thanks
 
