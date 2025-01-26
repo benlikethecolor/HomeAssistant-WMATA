@@ -40,7 +40,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     await coordinator.async_config_entry_first_refresh()
 
     # test to see if api initialized correctly, else raise ConfigNotReady to make HA retry setup
-    if not coordinator.api.connected:
+    if not coordinator.connected:
         raise ConfigEntryNotReady
 
     # initialize a listener for config flow options changes
