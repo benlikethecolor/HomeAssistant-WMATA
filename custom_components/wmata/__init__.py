@@ -39,7 +39,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     # async_config_entry_first_refresh -> no errors logged on failure
     await coordinator.async_config_entry_first_refresh()
 
-    # test to see if api initialized correctly, else raise ConfigNotReady to make HA retry setup
+    # test to see if api initialized correctly, else raise ConfigEntryNotReady to make HA retry setup
     if not coordinator.connected:
         raise ConfigEntryNotReady
 
@@ -55,11 +55,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
 
     # setup platforms (based on the list of entity types in PLATFORMS defined above)
     # this calls the async_setup method in each of your entity type files
-    for platform in PLATFORMS:
-        hass.async_create_task(
-            hass.config_entries.async_forward_entry_setup(
-                config_entry, platform)
-        )
+    await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
 
     return True
 
