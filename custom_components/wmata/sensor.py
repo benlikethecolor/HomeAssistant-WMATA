@@ -22,5 +22,11 @@ class WmataSensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         """Return the state of the sensor."""
         if self.coordinator.data and self.coordinator.data.next_trains:
-            return self.coordinator.data.next_trains[0]["Min"]
+            next_train = self.coordinator.data.next_trains[0]["Min"]
+            try:
+                # Try to convert the value to an integer
+                return int(next_train)
+            except ValueError:
+                # If conversion fails, return the string value
+                return next_train
         return None
