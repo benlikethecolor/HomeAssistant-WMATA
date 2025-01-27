@@ -37,6 +37,7 @@ class WmataSensor(CoordinatorEntity, SensorEntity):
         if self.coordinator.data and len(self.coordinator.data.next_trains) > self.train_index:
             next_train = self.coordinator.data.next_trains[self.train_index]
             attributes["line"] = LINE_NAME_MAP[next_train["Line"]]
-
+            attributes["destination"] = next_train["Destination"]
+            attributes["location"] = next_train["LocationName"]
         
         return attributes
