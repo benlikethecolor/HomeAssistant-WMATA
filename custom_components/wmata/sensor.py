@@ -23,10 +23,17 @@ class WmataSensor(CoordinatorEntity, SensorEntity):
         """Return the state of the sensor."""
         if self.coordinator.data and self.coordinator.data.next_trains:
             next_train = self.coordinator.data.next_trains[0]["Min"]
-            try:
-                # Try to convert the value to an integer
-                return int(next_train)
-            except ValueError:
-                # If conversion fails, return the string value
+            
+            if next_train in ["BRD", "ARR"]:
+                return 0
+            
+            else:
                 return next_train
+            
+            # try:
+            #     # Try to convert the value to an integer
+            #     return int(next_train)
+            # except ValueError:
+            #     # If conversion fails, return the string value
+            #     return next_train
         return None
