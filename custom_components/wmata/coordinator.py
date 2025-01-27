@@ -28,6 +28,7 @@ class WmataCoordinator(DataUpdateCoordinator):
 
         # Set variables from values entered in config flow setup
         #self.api_key = config_entry.data.get(CONF_API_KEY)
+        self.unique_id = config_entry.unique_id
         self.api_key = config_entry.data[CONF_API_KEY]
         self.headers = {"api_key": self.api_key}
         # self.station = config_entry.data.get(CONF_ID)
