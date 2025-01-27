@@ -1,4 +1,4 @@
-from .const import DOMAIN
+from .const import DOMAIN, LINE_NAME_MAP
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -36,5 +36,7 @@ class WmataSensor(CoordinatorEntity, SensorEntity):
         attributes = {}
         if self.coordinator.data and len(self.coordinator.data.next_trains) > self.train_index:
             next_train = self.coordinator.data.next_trains[self.train_index]
-            attributes["train_line"] = next_train["Line"]
+            attributes["line"] = LINE_NAME_MAP[next_train["Line"]]
+
+        
         return attributes
