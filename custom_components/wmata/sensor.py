@@ -39,5 +39,7 @@ class WmataSensor(CoordinatorEntity, SensorEntity):
             attributes["line"] = LINE_NAME_MAP[next_train["Line"]]
             attributes["destination"] = next_train["Destination"]
             attributes["location"] = next_train["LocationName"]
-        
+            attributes["car"] = next_train["Car"]
+            attributes["group"] = next_train["Group"]
+            
         return attributes
