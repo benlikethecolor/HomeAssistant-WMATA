@@ -85,7 +85,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         name="Train 1 Destination",
         icon="mdi:location-enter",
         state_class=SensorStateClass.TOTAL,
-        vvalue=lambda coord: coord.data.next_trains[0]["Destination"],
+        value=lambda coord: coord.data.next_trains[0]["Destination"],
         attributes={},
     ),
 )
