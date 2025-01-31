@@ -66,7 +66,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         icon="mdi:timer-outline",
         state_class=SensorStateClass.TOTAL,
         value=lambda coord: coord.data.next_trains[0]["Min"] if coord.data.next_trains[0]["Min"] not in [None, "ARR", "BRD"] else 0,
-        attributes={},
+        attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
         key="train_1_line",
@@ -74,7 +74,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         icon="mdi:train",
         state_class=SensorStateClass.TOTAL,
         value=lambda coord: LINE_NAME_MAP[coord.data.next_trains[0]["Line"]],
-        attributes={},
+        attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
         key="train_1_destination",
@@ -82,7 +82,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         icon="mdi:location-enter",
         state_class=SensorStateClass.TOTAL,
         value=lambda coord: coord.data.next_trains[0]["Destination"],
-        attributes={},
+        attributes=lambda coord: {},
     ),
 )
 
