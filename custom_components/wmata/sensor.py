@@ -26,7 +26,8 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_1_time",
         name="Train 1 Time",
         icon="mdi:timer-outline",
-        value=lambda coord: coord.data.next_trains[0]["Min"] if coord.data.next_trains[0]["Min"] not in [None, "ARR", "BRD"] else 0,
+        value=lambda coord: coord.data.next_trains[0]["Min"] if coord.data.next_trains[0]["Min"] not in [
+            None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -47,7 +48,8 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_2_time",
         name="Train 2 Time",
         icon="mdi:timer-outline",
-        value=lambda coord: coord.data.next_trains[1]["Min"] if coord.data.next_trains[1]["Min"] not in [None, "ARR", "BRD"] else 0,
+        value=lambda coord: coord.data.next_trains[1]["Min"] if coord.data.next_trains[1]["Min"] not in [
+            None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -68,7 +70,8 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_3_time",
         name="Train 3 Time",
         icon="mdi:timer-outline",
-        value=lambda coord: coord.data.next_trains[2]["Min"] if coord.data.next_trains[2]["Min"] not in [None, "ARR", "BRD"] else 0,
+        value=lambda coord: coord.data.next_trains[2]["Min"] if coord.data.next_trains[2]["Min"] not in [
+            None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -89,7 +92,8 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_4_time",
         name="Train 4 Time",
         icon="mdi:timer-outline",
-        value=lambda coord: coord.data.next_trains[3]["Min"] if coord.data.next_trains[3]["Min"] not in [None, "ARR", "BRD"] else 0,
+        value=lambda coord: coord.data.next_trains[3]["Min"] if coord.data.next_trains[3]["Min"] not in [
+            None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -110,7 +114,8 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_5_time",
         name="Train 5 Time",
         icon="mdi:timer-outline",
-        value=lambda coord: coord.data.next_trains[4]["Min"] if coord.data.next_trains[4]["Min"] not in [None, "ARR", "BRD"] else 0,
+        value=lambda coord: coord.data.next_trains[4]["Min"] if coord.data.next_trains[4]["Min"] not in [
+            None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -131,7 +136,8 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_6_time",
         name="Train 6 Time",
         icon="mdi:timer-outline",
-        value=lambda coord: coord.data.next_trains[5]["Min"] if coord.data.next_trains[5]["Min"] not in [None, "ARR", "BRD"] else 0,
+        value=lambda coord: coord.data.next_trains[5]["Min"] if coord.data.next_trains[5]["Min"] not in [
+            None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -150,13 +156,14 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
     ),
 )
 
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up the WMATA sensor platform."""
     # runtime_data = hass.data[DOMAIN][entry.entry_id]
     coordinator = hass.data[DOMAIN][entry.entry_id].coordinator
 
     sensors = []
-    
+
     for description in SENSOR_TYPES:
         sensors.append(WmataSensor(coordinator, description))
     # for i in range(4):
@@ -172,23 +179,25 @@ class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
     def __init__(self, coordinator: WmataCoordinator, description: WmataSensorEntityDescription) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-        
+
         self._attr_unique_id = f"{coordinator.unique_id}_{description.key}"
         self.entity_description = description
-    
+
     @callback
     def _handle_coordinator_update(self):
         """Handle updated data from the coordinator."""
-        
-        self._attr_native_value = self.entity_description.value(self.coordinator)
+
+        self._attr_native_value = self.entity_description.value(
+            self.coordinator)
         self._attr_extra_state_attributes = {}
-        
+
         self.async_write_ha_state()
-        
-        self._attr_extra_state_attributes = self.entity_description.attributes(self.coordinator)
-        
+
+        self._attr_extra_state_attributes = self.entity_description.attributes(
+            self.coordinator)
+
         self.async_write_ha_state()
-    
+
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
