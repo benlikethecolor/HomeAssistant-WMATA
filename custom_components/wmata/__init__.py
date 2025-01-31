@@ -11,9 +11,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-import logging
-
-_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
@@ -49,7 +46,6 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
         _async_update_listener)
 
     # add the coordinator and update listener to hass data to make accessible throughout your integration
-    # note: this will change on HA2024.6 to save on the config entry. # TODO add the 2024.6 update
     hass.data[DOMAIN][config_entry.entry_id] = RuntimeData(
         coordinator, cancel_update_listener)
 
@@ -70,6 +66,8 @@ async def async_remove_config_entry_device(hass: HomeAssistant, config_entry: Co
     """Delete device if selected from UI."""
     # adding this function shows the delete device option in the UI
     # you may need to do some checks here before allowing devices to be removed
+    
+    # TODO: no devices, is this needed?
     return True
 
 
