@@ -210,9 +210,9 @@ class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
     def __init__(self, coordinator: WmataCoordinator, description: WmataSensorEntityDescription) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
+        
         self._attr_unique_id = f"{coordinator.unique_id}_{description.key}"
         self.entity_description = description
-        # self._attr_name = description.name
     
     @callback
     def _handle_coordinator_update(self):
@@ -222,7 +222,9 @@ class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
         self._attr_extra_state_attributes = {}
         
         self.async_write_ha_state()
+        
         self._attr_extra_state_attributes = self.entity_description.attributes(self.coordinator)
+        
         self.async_write_ha_state()
     
     @property
