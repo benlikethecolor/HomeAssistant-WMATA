@@ -2,16 +2,12 @@ from .const import DOMAIN, LINE_NAME_MAP
 from .coordinator import WmataCoordinator
 from collections.abc import Callable
 from dataclasses import dataclass
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription, SensorStateClass
+from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from typing import Any
-
-import logging
-
-_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
