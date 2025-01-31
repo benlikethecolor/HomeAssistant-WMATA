@@ -9,6 +9,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from typing import Any
 
+import logging
+
+_LOGGER = logging.getLogger(__name__)
 
 # class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
 #     """Representation of a WMATA sensor."""
@@ -112,8 +115,15 @@ class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
     @callback
     def _handle_coordinator_update(self):
         """Handle updated data from the coordinator."""
+        _LOGGER.debug(f"Updating sensor: {self.entity_description.key}")
+        _LOGGER.debug(f"Coordinator data: {self.coordinator.data}")
+        
         self._attr_native_value = self.entity_description.value(self.coordinator)
         self._attr_extra_state_attributes = {}
+        
+        _LOGGER.debug(f"Sensor value: {self._attr_native_value}")
+        _LOGGER.debug(f"Sensor attributes: {self._attr_extra_state_attributes}")
+        
         self.async_write_ha_state()
         self._attr_extra_state_attributes = self.entity_description.attributes(self.coordinator)
         self.async_write_ha_state()
