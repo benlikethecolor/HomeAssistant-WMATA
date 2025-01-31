@@ -10,49 +10,39 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from typing import Any
 
 
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    """Set up the WMATA sensor platform."""
-    runtime_data = hass.data[DOMAIN][config_entry.entry_id]
-    coordinator = runtime_data.coordinator
+# class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
+#     """Representation of a WMATA sensor."""
 
-    sensors = []
-    for i in range(4):
-        sensors.append(WmataSensor(coordinator, i))
-    async_add_entities(sensors, False)
+#     def __init__(self, coordinator: WmataCoordinator, train_index: int) -> None:
+#         """Initialize the sensor."""
+#         super().__init__(coordinator)
+#         self._attr_name = f"Train {train_index + 1}"
+#         self._attr_native_unit_of_measurement = "minutes"
+#         self.train_index = train_index
+#         self._attr_unique_id = f"{coordinator.unique_id}_train_{train_index + 1}"
 
+#     @property
+#     def native_value(self):
+#         """Return the state of the sensor."""
+#         if self.coordinator.data and len(self.coordinator.data.next_trains) > self.train_index:
+#             next_train = self.coordinator.data.next_trains[self.train_index]["Min"]
+#             if next_train in ["BRD", "ARR"]:
+#                 return 0
+#             try:
+#                 return int(next_train)
+#             except ValueError:
+#                 return None
+#         return None
 
-class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
-    """Representation of a WMATA sensor."""
-
-    def __init__(self, coordinator: WmataCoordinator, train_index: int) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._attr_name = f"Train {train_index + 1}"
-        self._attr_native_unit_of_measurement = "minutes"
-        self.train_index = train_index
-        self._attr_unique_id = f"{coordinator.unique_id}_train_{train_index + 1}"
-
-    @property
-    def native_value(self):
-        """Return the state of the sensor."""
-        if self.coordinator.data and len(self.coordinator.data.next_trains) > self.train_index:
-            next_train = self.coordinator.data.next_trains[self.train_index]["Min"]
-            if next_train in ["BRD", "ARR"]:
-                return 0
-            try:
-                return int(next_train)
-            except ValueError:
-                return None
-        return None
-
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes."""
-        attributes = {}
-        if self.coordinator.data and len(self.coordinator.data.next_trains) > self.train_index:
-            next_train = self.coordinator.data.next_trains[self.train_index]
-            attributes["train_line"] = next_train.get("Line")
-        return attributes
+#     @property
+#     def extra_state_attributes(self):
+#         """Return the state attributes."""
+#         attributes = {}
+#         if self.coordinator.data and len(self.coordinator.data.next_trains) > self.train_index:
+#             next_train = self.coordinator.data.next_trains[self.train_index]
+#             attributes["train_line"] = next_train.get("Line")
+#             attributes["destination"] = next_train.get("Destination")
+#         return attributes
 
 
 @dataclass
@@ -92,3 +82,43 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         attributes={},
     ),
 )
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
+    """Set up the WMATA sensor platform."""
+    # runtime_data = hass.data[DOMAIN][entry.entry_id]
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    sensors = []
+    
+    for description in SENSOR_TYPES:
+        sensors.append(WmataSensor(coordinator, description))
+    # for i in range(4):
+    #     sensors.append(WmataSensor(coordinator, i))
+    async_add_entities(sensors, False)
+
+
+class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
+    """Representation of a WMATA sensor."""
+    _attr_has_entity_name = True
+    entity_description = WmataSensorEntityDescription
+
+    def __init__(self, coordinator: WmataCoordinator, description: WmataSensorEntityDescription) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.unique_id}_{description.key}"
+        self.entity_description = description
+        # self._attr_name = description.name
+    
+    @callback
+    def _handle_coordinator_update(self):
+        """Handle updated data from the coordinator."""
+        self._attr_native_value = self.entity_description.value(self.coordinator)
+        self._attr_extra_state_attributes = {}
+        self.async_write_ha_state()
+        self._attr_extra_state_attributes = self.entity_description.attributes(self.coordinator)
+        self.async_write_ha_state()
+    
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self.entity_description.value(self.coordinator) is not None
