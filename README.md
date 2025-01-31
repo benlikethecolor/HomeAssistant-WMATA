@@ -59,6 +59,23 @@ sub_button:
     state_background: true
 ```
 
+### Mushroom
+
+If you use mushroom, here's a quick sample I've created using this integration. 
+
+![sample photo of mushroom](docs/images/Mushroom.png)
+
+```yaml
+type: horizontal-stack
+cards:
+  - type: custom:mushroom-entity-card
+    entity: sensor.train_1_destination
+  - type: custom:mushroom-entity-card
+    entity: sensor.train_1_line
+  - type: custom:mushroom-entity-card
+    entity: sensor.train_1_time
+```
+
 ## Future Improvments?
 
 - Change the way that this is setup, so that you only need one station ID for stations with multiple codes. Just enter one or the other, have the code just search for both while you're there
