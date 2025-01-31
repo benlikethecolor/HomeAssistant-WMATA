@@ -47,7 +47,7 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
     _input_data: dict[str, Any]
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_configure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step."""
 
         # called when you initiate adding an integration via the UI
@@ -55,7 +55,7 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             # the form has been filled in and submitted, so process the data provided
-            
+
             try:
                 # validate that the setup data is valid and if not handle errors
                 # errors["base"] values must match the values in your strings.json file
@@ -83,51 +83,19 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
         )
 
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle the initial step."""
+
+        return await self.async_step_configure(user_input)
+
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Add reconfigure step to allow to reconfigure a config entry."""
 
-        # this method displays a reconfigure option in the integration and is different to options
-        # it can be used to reconfigure any of the data submitted when first installed
-        # this is optional and can be removed if you do not want to allow reconfiguration
-        errors: dict[str, str] = {}
-
-        config_entry = self.hass.config_entries.async_get_entry(
+        self.config_entry = self.hass.config_entries.async_get_entry(
             self.context["entry_id"]
         )
 
-        if user_input is not None:
-            try:
-                user_input[CONF_HOST] = config_entry.data[CONF_HOST]
-                await validate_input(self.hass, user_input)
-
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-
-            except InvalidAuth:
-                errors["base"] = "invalid_auth"
-
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
-
-            else:
-                return self.async_update_reload_and_abort(
-                    config_entry,
-                    unique_id=config_entry.unique_id,
-                    data={**config_entry.data, **user_input},
-                    reason="reconfigure_successful",
-                )
-
-        return self.async_show_form(
-            step_id="reconfigure",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_API_KEY, description={"suggested_value": "1234567890"}): str,
-                    vol.Required(CONF_ID, description={"suggested_value": "A01"}): str
-                }
-            ),
-            errors=errors,
-        )
+        return await self.async_step_configure(user_input)
 
 
 class CannotConnect(HomeAssistantError):
