@@ -27,11 +27,9 @@ class WmataCoordinator(DataUpdateCoordinator):
         """Initialize coordinator class"""
 
         # Set variables from values entered in config flow setup
-        #self.api_key = config_entry.data.get(CONF_API_KEY)
         self.unique_id = config_entry.entry_id
         self.api_key = config_entry.data[CONF_API_KEY]
         self.headers = {"api_key": self.api_key}
-        # self.station = config_entry.data.get(CONF_ID)
         self.station = config_entry.data[CONF_ID]
 
         self.connected: bool = False
@@ -45,7 +43,6 @@ class WmataCoordinator(DataUpdateCoordinator):
         super().__init__(
             hass,
             _LOGGER,
-            # name=f"{DOMAIN} ({config_entry.unique_id})",
             name=f"{DOMAIN}",
             update_method=self.async_update_data,
             update_interval=timedelta(seconds=self.poll_interval),
@@ -56,9 +53,6 @@ class WmataCoordinator(DataUpdateCoordinator):
         # next_trains = [{"Destination": "Glenmont", "Line": "Red", "LocationName": "Glenmont", "Min": 3}, ...]
         # self.next_buses = []
         self.next_trains = []
-
-        # TODO: should be set by the user in the setup process
-        # self.station = str
 
     async def async_validate_api_key(self) -> bool:
         async with aiohttp.ClientSession() as session:
