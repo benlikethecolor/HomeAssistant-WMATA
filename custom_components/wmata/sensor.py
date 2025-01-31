@@ -29,6 +29,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_trains[0]["Min"] if coord.data.next_trains[0]["Min"] not in [
             None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
+        native_unit_of_measurement="minutes",
     ),
     WmataSensorEntityDescription(
         key="train_1_line",
@@ -51,6 +52,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_trains[1]["Min"] if coord.data.next_trains[1]["Min"] not in [
             None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
+        native_unit_of_measurement="minutes",
     ),
     WmataSensorEntityDescription(
         key="train_2_line",
@@ -73,6 +75,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_trains[2]["Min"] if coord.data.next_trains[2]["Min"] not in [
             None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
+        native_unit_of_measurement="minutes",
     ),
     WmataSensorEntityDescription(
         key="train_3_line",
@@ -95,6 +98,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_trains[3]["Min"] if coord.data.next_trains[3]["Min"] not in [
             None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
+        native_unit_of_measurement="minutes",
     ),
     WmataSensorEntityDescription(
         key="train_4_line",
@@ -117,6 +121,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_trains[4]["Min"] if coord.data.next_trains[4]["Min"] not in [
             None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
+        native_unit_of_measurement="minutes",
     ),
     WmataSensorEntityDescription(
         key="train_5_line",
@@ -139,6 +144,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_trains[5]["Min"] if coord.data.next_trains[5]["Min"] not in [
             None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
+        native_unit_of_measurement="minutes",
     ),
     WmataSensorEntityDescription(
         key="train_6_line",
