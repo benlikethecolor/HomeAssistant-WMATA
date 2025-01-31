@@ -26,7 +26,7 @@ If you ever lose or forget your API details, you can find it [on your profile](h
 
 ### Getting Your Metro Station ID
 
-Unfortunately there's no good way to see a list of all of the bus station stop or metro station codes online outside of using the API. I've provided a list of the [metro station codes in this file](https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/METRO_STATION_CODES.md). Simply open it, find your local metro station, and add the code next to it. 
+Unfortunately there's no good way to see a list of all of the bus station stop or metro station codes online outside of using the API. I've provided a list of the [metro station codes in this file](https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/METRO_STATION_CODES.md). Simply open it, find your local metro station, and add the code next to it. 
 
 **IMPORTANT NOTE:** if you see that your "local" metro station has two entries, make sure to pick the entry with the line you want. For example, say your local metro station is "Metro Center", and you ride the orange line. In this case, you would select the station code "C01", not "A01". 
 
