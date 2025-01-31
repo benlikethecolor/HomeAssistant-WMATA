@@ -13,40 +13,6 @@ import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-# class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
-#     """Representation of a WMATA sensor."""
-
-#     def __init__(self, coordinator: WmataCoordinator, train_index: int) -> None:
-#         """Initialize the sensor."""
-#         super().__init__(coordinator)
-#         self._attr_name = f"Train {train_index + 1}"
-#         self._attr_native_unit_of_measurement = "minutes"
-#         self.train_index = train_index
-#         self._attr_unique_id = f"{coordinator.unique_id}_train_{train_index + 1}"
-
-#     @property
-#     def native_value(self):
-#         """Return the state of the sensor."""
-#         if self.coordinator.data and len(self.coordinator.data.next_trains) > self.train_index:
-#             next_train = self.coordinator.data.next_trains[self.train_index]["Min"]
-#             if next_train in ["BRD", "ARR"]:
-#                 return 0
-#             try:
-#                 return int(next_train)
-#             except ValueError:
-#                 return None
-#         return None
-
-#     @property
-#     def extra_state_attributes(self):
-#         """Return the state attributes."""
-#         attributes = {}
-#         if self.coordinator.data and len(self.coordinator.data.next_trains) > self.train_index:
-#             next_train = self.coordinator.data.next_trains[self.train_index]
-#             attributes["train_line"] = next_train.get("Line")
-#             attributes["destination"] = next_train.get("Destination")
-#         return attributes
-
 
 @dataclass
 class WmataSensorRequiredKeysMixin:
