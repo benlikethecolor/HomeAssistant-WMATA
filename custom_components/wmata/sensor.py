@@ -86,7 +86,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up the WMATA sensor platform."""
     # runtime_data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = hass.data[DOMAIN][entry.entry_id].coordinator
 
     sensors = []
     
