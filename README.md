@@ -4,6 +4,8 @@ WORK IN PROGRESS
 
 Integration to connect with the WMATA API to report upcoming trains/buses at local stops. 
 
+![sample photo of sensors, using Metro Center as the station](docs/images/Sensor%20Samples.png)
+
 ## Installation
 
 To install this integration, you need the following:
