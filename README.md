@@ -2,7 +2,7 @@
 
 Integration to connect with the WMATA API to report upcoming trains/buses at local stops. 
 
-![sample photo of sensors, using Metro Center as the station](docs/images/Sensor%20Samples.png)
+<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Sensor%20Samples.png?raw=true" width="48%"></p>
 
 ## Installation
 
@@ -36,7 +36,7 @@ Unfortunately there's no good way to see a list of all of the bus station stop o
 
 If you use bubble card, here's a quick sample I've created using this integration. 
 
-![sample photo of bubble card](docs/images/Bubble%20Card.png)
+<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Bubble%20Card.png?raw=true" width="48%"></p>
 
 ```yaml
 type: custom:bubble-card
@@ -63,7 +63,7 @@ sub_button:
 
 If you use mushroom, here's a quick sample I've created using this integration. 
 
-![sample photo of mushroom](docs/images/Mushroom.png)
+<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Mushroom.png?raw=true" width="48%"></p>
 
 ```yaml
 type: horizontal-stack
