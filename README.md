@@ -30,6 +30,35 @@ Unfortunately there's no good way to see a list of all of the bus station stop o
 
 **IMPORTANT NOTE:** if you see that your "local" metro station has two entries, make sure to pick the entry with the line you want. For example, say your local metro station is "Metro Center", and you ride the orange line. In this case, you would select the station code "C01", not "A01". 
 
+## Dashboards
+
+### Bubble Card
+
+If you use bubble card, here's a quick sample I've created using this integration. 
+
+![sample photo of bubble card](docs/images/Bubble%20Card.png)
+
+```yaml
+type: custom:bubble-card
+card_type: button
+button_type: name
+name: Train 1
+icon: mdi:train
+sub_button:
+  - entity: sensor.train_1_destination
+    show_name: false
+    show_state: true
+  - entity: sensor.train_1_line
+    show_state: true
+  - entity: sensor.train_1_time
+    show_state: true
+    show_attribute: false
+    show_name: false
+    show_last_changed: false
+    show_background: true
+    state_background: true
+```
+
 ## Future Improvments?
 
 - Change the way that this is setup, so that you only need one station ID for stations with multiple codes. Just enter one or the other, have the code just search for both while you're there
