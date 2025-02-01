@@ -88,6 +88,7 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return await self.async_step_configure(user_input)
 
+    # TODO: this does work, however it does not alter the original, just create another instance
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Add reconfigure step to allow to reconfigure a config entry."""
 
