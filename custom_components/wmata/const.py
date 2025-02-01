@@ -2,7 +2,7 @@
 
 
 DEFAULT_SCAN_INTERVAL = 60
-DOMAIN = "WMATA"
+DOMAIN = "wmata"
 
 LINE_NAME_MAP = {
     "BL": "Blue",
