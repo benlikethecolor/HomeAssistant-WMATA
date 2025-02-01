@@ -20,9 +20,6 @@ class WmataSensorRequiredKeysMixin:
 class WmataSensorEntityDescription(SensorEntityDescription, WmataSensorRequiredKeysMixin):
     """A class that describes sensor entities."""
 
-# TODO: add a sensor for the number of cars coord.data.next_trains[0]["Car"]
-# TODO: add a sensor for group (describes which track the train is on) coord.data.next_trains[0]["Group"]
-# TODO: add the group sensor as inactive by default by adding the parameter entity_registry_enabled_default=False
 
 SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
     WmataSensorEntityDescription(
@@ -49,6 +46,21 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
+        key="wmata_%s_train_1_car" % (lambda coord: coord.station),
+        name="%s Train 1 Car" % (lambda coord: coord.station),
+        icon="mdi:train-car-passenger-door",
+        value=lambda coord: coord.data.next_trains[0]["Car"],
+        attributes=lambda coord: {},
+    ),
+    WmataSensorEntityDescription(
+        key="wmata_%s_train_1_group" % (lambda coord: coord.station),
+        name="%s Train 1 Group" % (lambda coord: coord.station),
+        icon="mdi:transit-transfer",
+        value=lambda coord: coord.data.next_trains[0]["Group"],
+        attributes=lambda coord: {},
+        entity_registry_enabled_default=False,
+    ),
+    WmataSensorEntityDescription(
         key="wmata_%s_train_2_time" % (lambda coord: coord.station),
         name="%s Train 2 Time" % (lambda coord: coord.station),
         icon="mdi:timer-outline",
@@ -70,6 +82,21 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         icon="mdi:location-enter",
         value=lambda coord: coord.data.next_trains[1]["LocationName"],
         attributes=lambda coord: {},
+    ),
+    WmataSensorEntityDescription(
+        key="wmata_%s_train_2_car" % (lambda coord: coord.station),
+        name="%s Train 2 Car" % (lambda coord: coord.station),
+        icon="mdi:train-car-passenger-door",
+        value=lambda coord: coord.data.next_trains[1]["Car"],
+        attributes=lambda coord: {},
+    ),
+    WmataSensorEntityDescription(
+        key="wmata_%s_train_2_group" % (lambda coord: coord.station),
+        name="%s Train 2 Group" % (lambda coord: coord.station),
+        icon="mdi:transit-transfer",
+        value=lambda coord: coord.data.next_trains[1]["Group"],
+        attributes=lambda coord: {},
+        entity_registry_enabled_default=False,
     ),
     WmataSensorEntityDescription(
         key="wmata_%s_train_3_time" % (lambda coord: coord.station),
@@ -95,6 +122,21 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
+        key="wmata_%s_train_3_car" % (lambda coord: coord.station),
+        name="%s Train 3 Car" % (lambda coord: coord.station),
+        icon="mdi:train-car-passenger-door",
+        value=lambda coord: coord.data.next_trains[2]["Car"],
+        attributes=lambda coord: {},
+    ),
+    WmataSensorEntityDescription(
+        key="wmata_%s_train_3_group" % (lambda coord: coord.station),
+        name="%s Train 3 Group" % (lambda coord: coord.station),
+        icon="mdi:transit-transfer",
+        value=lambda coord: coord.data.next_trains[2]["Group"],
+        attributes=lambda coord: {},
+        entity_registry_enabled_default=False,
+    ),
+    WmataSensorEntityDescription(
         key="wmata_%s_train_4_time" % (lambda coord: coord.station),
         name="%s Train 4 Time" % (lambda coord: coord.station),
         icon="mdi:timer-outline",
@@ -116,6 +158,21 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         icon="mdi:location-enter",
         value=lambda coord: coord.data.next_trains[3]["LocationName"],
         attributes=lambda coord: {},
+    ),
+    WmataSensorEntityDescription(
+        key="wmata_%s_train_4_car" % (lambda coord: coord.station),
+        name="%s Train 4 Car" % (lambda coord: coord.station),
+        icon="mdi:train-car-passenger-door",
+        value=lambda coord: coord.data.next_trains[3]["Car"],
+        attributes=lambda coord: {},
+    ),
+    WmataSensorEntityDescription(
+        key="wmata_%s_train_4_group" % (lambda coord: coord.station),
+        name="%s Train 4 Group" % (lambda coord: coord.station),
+        icon="mdi:transit-transfer",
+        value=lambda coord: coord.data.next_trains[3]["Group"],
+        attributes=lambda coord: {},
+        entity_registry_enabled_default=False,
     ),
     WmataSensorEntityDescription(
         key="wmata_%s_train_5_time" % (lambda coord: coord.station),
@@ -141,6 +198,21 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
+        key="wmata_%s_train_5_car" % (lambda coord: coord.station),
+        name="%s Train 5 Car" % (lambda coord: coord.station),
+        icon="mdi:train-car-passenger-door",
+        value=lambda coord: coord.data.next_trains[4]["Car"],
+        attributes=lambda coord: {},
+    ),
+    WmataSensorEntityDescription(
+        key="wmata_%s_train_5_group" % (lambda coord: coord.station),
+        name="%s Train 5 Group" % (lambda coord: coord.station),
+        icon="mdi:transit-transfer",
+        value=lambda coord: coord.data.next_trains[4]["Group"],
+        attributes=lambda coord: {},
+        entity_registry_enabled_default=False,
+    ),
+    WmataSensorEntityDescription(
         key="wmata_%s_train_6_time" % (lambda coord: coord.station),
         name="%s Train 6 Time" % (lambda coord: coord.station),
         icon="mdi:timer-outline",
@@ -162,6 +234,21 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         icon="mdi:location-enter",
         value=lambda coord: coord.data.next_trains[5]["LocationName"],
         attributes=lambda coord: {},
+    ),
+    WmataSensorEntityDescription(
+        key="wmata_%s_train_6_car" % (lambda coord: coord.station),
+        name="%s Train 6 Car" % (lambda coord: coord.station),
+        icon="mdi:train-car-passenger-door",
+        value=lambda coord: coord.data.next_trains[5]["Car"],
+        attributes=lambda coord: {},
+    ),
+    WmataSensorEntityDescription(
+        key="wmata_%s_train_6_group" % (lambda coord: coord.station),
+        name="%s Train 6 Group" % (lambda coord: coord.station),
+        icon="mdi:transit-transfer",
+        value=lambda coord: coord.data.next_trains[5]["Group"],
+        attributes=lambda coord: {},
+        entity_registry_enabled_default=False,
     ),
 )
 
