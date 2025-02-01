@@ -20,16 +20,14 @@ class WmataSensorRequiredKeysMixin:
 class WmataSensorEntityDescription(SensorEntityDescription, WmataSensorRequiredKeysMixin):
     """A class that describes sensor entities."""
 
-# TODO: adjust sensor names to be "wmata_a01_train_1_time" and so on to better avoid conflicts with other sensors, maybe it makes more sense to add the station code in, in cases where people want multiple stations in the same HA instance
-
 # TODO: add a sensor for the number of cars coord.data.next_trains[0]["Car"]
 # TODO: add a sensor for group (describes which track the train is on) coord.data.next_trains[0]["Group"]
 # TODO: add the group sensor as inactive by default by adding the parameter entity_registry_enabled_default=False
 
 SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
     WmataSensorEntityDescription(
-        key="train_1_time",
-        name="Train 1 Time",
+        key="wmata_%s_train_1_time" % (lambda coord: coord.station),
+        name="%s Train 1 Time" % (lambda coord: coord.station),
         icon="mdi:timer-outline",
         value=lambda coord: coord.data.next_trains[0]["Min"] if coord.data.next_trains[0]["Min"] not in [
             None, "ARR", "BRD"] else 0,
@@ -37,22 +35,22 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         native_unit_of_measurement="minutes",
     ),
     WmataSensorEntityDescription(
-        key="train_1_line",
-        name="Train 1 Line",
+        key="wmata_%s_train_1_line" % (lambda coord: coord.station),
+        name="%s Train 1 Line" % (lambda coord: coord.station),
         icon="mdi:train",
         value=lambda coord: LINE_NAME_MAP[coord.data.next_trains[0]["Line"]],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key="train_1_destination",
-        name="Train 1 Destination",
+        key="wmata_%s_train_1_destination" % (lambda coord: coord.station),
+        name="%s Train 1 Destination" % (lambda coord: coord.station),
         icon="mdi:location-enter",
         value=lambda coord: coord.data.next_trains[0]["LocationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key="train_2_time",
-        name="Train 2 Time",
+        key="wmata_%s_train_2_time" % (lambda coord: coord.station),
+        name="%s Train 2 Time" % (lambda coord: coord.station),
         icon="mdi:timer-outline",
         value=lambda coord: coord.data.next_trains[1]["Min"] if coord.data.next_trains[1]["Min"] not in [
             None, "ARR", "BRD"] else 0,
@@ -60,22 +58,22 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         native_unit_of_measurement="minutes",
     ),
     WmataSensorEntityDescription(
-        key="train_2_line",
-        name="Train 2 Line",
+        key="wmata_%s_train_2_line" % (lambda coord: coord.station),
+        name="%s Train 2 Line" % (lambda coord: coord.station),
         icon="mdi:train",
         value=lambda coord: LINE_NAME_MAP[coord.data.next_trains[1]["Line"]],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key="train_2_destination",
-        name="Train 2 Destination",
+        key="wmata_%s_train_2_destination" % (lambda coord: coord.station),
+        name="%s Train 2 Destination" % (lambda coord: coord.station),
         icon="mdi:location-enter",
         value=lambda coord: coord.data.next_trains[1]["LocationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key="train_3_time",
-        name="Train 3 Time",
+        key="wmata_%s_train_3_time" % (lambda coord: coord.station),
+        name="%s Train 3 Time" % (lambda coord: coord.station),
         icon="mdi:timer-outline",
         value=lambda coord: coord.data.next_trains[2]["Min"] if coord.data.next_trains[2]["Min"] not in [
             None, "ARR", "BRD"] else 0,
@@ -83,22 +81,22 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         native_unit_of_measurement="minutes",
     ),
     WmataSensorEntityDescription(
-        key="train_3_line",
-        name="Train 3 Line",
+        key="wmata_%s_train_3_line" % (lambda coord: coord.station),
+        name="%s Train 3 Line" % (lambda coord: coord.station),
         icon="mdi:train",
         value=lambda coord: LINE_NAME_MAP[coord.data.next_trains[2]["Line"]],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key="train_3_destination",
-        name="Train 3 Destination",
+        key="wmata_%s_train_3_destination" % (lambda coord: coord.station),
+        name="%s Train 3 Destination" % (lambda coord: coord.station),
         icon="mdi:location-enter",
         value=lambda coord: coord.data.next_trains[2]["LocationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key="train_4_time",
-        name="Train 4 Time",
+        key="wmata_%s_train_4_time" % (lambda coord: coord.station),
+        name="%s Train 4 Time" % (lambda coord: coord.station),
         icon="mdi:timer-outline",
         value=lambda coord: coord.data.next_trains[3]["Min"] if coord.data.next_trains[3]["Min"] not in [
             None, "ARR", "BRD"] else 0,
@@ -106,22 +104,22 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         native_unit_of_measurement="minutes",
     ),
     WmataSensorEntityDescription(
-        key="train_4_line",
-        name="Train 4 Line",
+        key="wmata_%s_train_4_line" % (lambda coord: coord.station),
+        name="%s Train 4 Line" % (lambda coord: coord.station),
         icon="mdi:train",
         value=lambda coord: LINE_NAME_MAP[coord.data.next_trains[3]["Line"]],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key="train_4_destination",
-        name="Train 4 Destination",
+        key="wmata_%s_train_4_destination" % (lambda coord: coord.station),
+        name="%s Train 4 Destination" % (lambda coord: coord.station),
         icon="mdi:location-enter",
         value=lambda coord: coord.data.next_trains[3]["LocationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key="train_5_time",
-        name="Train 5 Time",
+        key="wmata_%s_train_5_time" % (lambda coord: coord.station),
+        name="%s Train 5 Time" % (lambda coord: coord.station),
         icon="mdi:timer-outline",
         value=lambda coord: coord.data.next_trains[4]["Min"] if coord.data.next_trains[4]["Min"] not in [
             None, "ARR", "BRD"] else 0,
@@ -129,22 +127,22 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         native_unit_of_measurement="minutes",
     ),
     WmataSensorEntityDescription(
-        key="train_5_line",
-        name="Train 5 Line",
+        key="wmata_%s_train_5_line" % (lambda coord: coord.station),
+        name="%s Train 5 Line" % (lambda coord: coord.station),
         icon="mdi:train",
         value=lambda coord: LINE_NAME_MAP[coord.data.next_trains[4]["Line"]],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key="train_5_destination",
-        name="Train 5 Destination",
+        key="wmata_%s_train_5_destination" % (lambda coord: coord.station),
+        name="%s Train 5 Destination" % (lambda coord: coord.station),
         icon="mdi:location-enter",
         value=lambda coord: coord.data.next_trains[4]["LocationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key="train_6_time",
-        name="Train 6 Time",
+        key="wmata_%s_train_6_time" % (lambda coord: coord.station),
+        name="%s Train 6 Time" % (lambda coord: coord.station),
         icon="mdi:timer-outline",
         value=lambda coord: coord.data.next_trains[5]["Min"] if coord.data.next_trains[5]["Min"] not in [
             None, "ARR", "BRD"] else 0,
@@ -152,15 +150,15 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         native_unit_of_measurement="minutes",
     ),
     WmataSensorEntityDescription(
-        key="train_6_line",
-        name="Train 6 Line",
+        key="wmata_%s_train_6_line" % (lambda coord: coord.station),
+        name="%s Train 6 Line" % (lambda coord: coord.station),
         icon="mdi:train",
         value=lambda coord: LINE_NAME_MAP[coord.data.next_trains[5]["Line"]],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key="train_6_destination",
-        name="Train 6 Destination",
+        key="wmata_%s_train_6_destination" % (lambda coord: coord.station),
+        name="%s Train 6 Destination" % (lambda coord: coord.station),
         icon="mdi:location-enter",
         value=lambda coord: coord.data.next_trains[5]["LocationName"],
         attributes=lambda coord: {},
