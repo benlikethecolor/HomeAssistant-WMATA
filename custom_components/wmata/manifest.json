@@ -4,7 +4,7 @@
     ],
     "config_flow": true,
     "documentation": "https://github.com/benlikethecolor/HomeAssistant-WMATA",
-    "domain": "WMATA",
+    "domain": "wmata",
     "integration_type": "hub",
     "iot_class": "cloud_polling",
     "issue_tracker": "https://github.com/benlikethecolor/HomeAssistant-WMATA/issues",
