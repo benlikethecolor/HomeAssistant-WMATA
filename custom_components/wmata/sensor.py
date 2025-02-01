@@ -20,6 +20,11 @@ class WmataSensorRequiredKeysMixin:
 class WmataSensorEntityDescription(SensorEntityDescription, WmataSensorRequiredKeysMixin):
     """A class that describes sensor entities."""
 
+# TODO: adjust sensor names to be "wmata_a01_train_1_time" and so on to better avoid conflicts with other sensors, maybe it makes more sense to add the station code in, in cases where people want multiple stations in the same HA instance
+
+# TODO: add a sensor for the number of cars coord.data.next_trains[0]["Car"]
+# TODO: add a sensor for group (describes which track the train is on) coord.data.next_trains[0]["Group"]
+# TODO: add the group sensor as inactive by default by adding the parameter entity_registry_enabled_default=False
 
 SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
     WmataSensorEntityDescription(
@@ -42,7 +47,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_1_destination",
         name="Train 1 Destination",
         icon="mdi:location-enter",
-        value=lambda coord: coord.data.next_trains[0]["Destination"],
+        value=lambda coord: coord.data.next_trains[0]["LocationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -65,7 +70,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_2_destination",
         name="Train 2 Destination",
         icon="mdi:location-enter",
-        value=lambda coord: coord.data.next_trains[1]["Destination"],
+        value=lambda coord: coord.data.next_trains[1]["LocationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -88,7 +93,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_3_destination",
         name="Train 3 Destination",
         icon="mdi:location-enter",
-        value=lambda coord: coord.data.next_trains[2]["Destination"],
+        value=lambda coord: coord.data.next_trains[2]["LocationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -111,7 +116,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_4_destination",
         name="Train 4 Destination",
         icon="mdi:location-enter",
-        value=lambda coord: coord.data.next_trains[3]["Destination"],
+        value=lambda coord: coord.data.next_trains[3]["LocationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -134,7 +139,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_5_destination",
         name="Train 5 Destination",
         icon="mdi:location-enter",
-        value=lambda coord: coord.data.next_trains[4]["Destination"],
+        value=lambda coord: coord.data.next_trains[4]["LocationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -157,7 +162,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_6_destination",
         name="Train 6 Destination",
         icon="mdi:location-enter",
-        value=lambda coord: coord.data.next_trains[5]["Destination"],
+        value=lambda coord: coord.data.next_trains[5]["LocationName"],
         attributes=lambda coord: {},
     ),
 )
