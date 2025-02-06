@@ -89,9 +89,10 @@ class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
 
         station = coordinator.station
         station_name = coordinator.station_name
-        self._attr_unique_id = f"wmata_{station}_{description.key}"
-        self.entity_description = description
         self._attr_name = f"{station_name} {description.name}"
+        # self._attr_unique_id = f"wmata_{station}_{description.key}"
+        self.entity_description = description
+        self.entity_id = f"sensor.wmata_{station}_{description.key}"
 
         # Log the values for debugging
         _LOGGER.debug("Initializing WmataSensor: station=%s, description.key=%s, unique_id=%s",
