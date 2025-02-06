@@ -39,7 +39,8 @@ If you want to have trains for multiple stations setup, follow these steps:
 3. Enter your API key again, along with the new station ID
 4. Select "Submit"
 
-After this is completed, you should see the new entities appear for the new station, like the below. 
+After this is completed, you should see the new entities appear for the new station, like the below:
+<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Multiple%20Stations%20Setup.png?raw=true" width="90%"></p>
 
 ## Dashboards
 
