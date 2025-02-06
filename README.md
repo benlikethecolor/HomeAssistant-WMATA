@@ -45,12 +45,12 @@ button_type: name
 name: Train 1
 icon: mdi:train
 sub_button:
-  - entity: sensor.train_1_destination
+  - entity: sensor.wmata_a01_train_1_destination
     show_name: false
     show_state: true
-  - entity: sensor.train_1_line
+  - entity: sensor.wmata_a01_train_1_line
     show_state: true
-  - entity: sensor.train_1_time
+  - entity: sensor.wmata_a01_train_1_time
     show_state: true
     show_attribute: false
     show_name: false
@@ -69,11 +69,11 @@ If you use mushroom, here's a quick sample I've created using this integration.
 type: horizontal-stack
 cards:
   - type: custom:mushroom-entity-card
-    entity: sensor.train_1_destination
+    entity: sensor.wmata_a01_train_1_destination
   - type: custom:mushroom-entity-card
-    entity: sensor.train_1_line
+    entity: sensor.wmata_a01_train_1_line
   - type: custom:mushroom-entity-card
-    entity: sensor.train_1_time
+    entity: sensor.wmata_a01_train_1_time
 ```
 
 ## Future Improvments?
