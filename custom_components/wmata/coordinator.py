@@ -31,7 +31,7 @@ class WmataCoordinator(DataUpdateCoordinator):
         self.api_key = config_entry.data[CONF_API_KEY]
         self.headers = {"api_key": self.api_key}
         self.station = config_entry.data[CONF_ID]
-        self.station_name = STATION_CODE_MAP(self.station)
+        self.station_name = STATION_CODE_MAP[self.station]
 
         self.connected: bool = False
         _LOGGER.debug(f"API key: {self.api_key}")
