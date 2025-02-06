@@ -30,6 +30,17 @@ Unfortunately there's no good way to see a list of all of the bus station stop o
 
 **IMPORTANT NOTE:** if you see that your "local" metro station has two entries, make sure to pick the entry with the line you want. For example, say your local metro station is "Metro Center", and you ride the orange line. In this case, you would select the station code "C01", not "A01". 
 
+## Setting Up Multiple Stations
+
+If you want to have trains for multiple stations setup, follow these steps:
+
+1. Go to "Settings" > "Integrations" > "WMATA"
+2. Select "Add Hub"
+3. Enter your API key again, along with the new station ID
+4. Select "Submit"
+
+After this is completed, you should see the new entities appear for the new station, like the below. 
+
 ## Dashboards
 
 ### Bubble Card
