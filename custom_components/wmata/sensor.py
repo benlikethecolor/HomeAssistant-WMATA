@@ -90,7 +90,7 @@ class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
         station = coordinator.station.lower()
         station_name = coordinator.station_name
         self._attr_name = f"{station_name} {description.name}"
-        # self._attr_unique_id = f"wmata_{station}_{description.key}"
+        self._attr_unique_id = f"wmata_{station}_{description.key}"
         self.entity_description = description
         self.entity_id = f"sensor.wmata_{station}_{description.key}"
 
