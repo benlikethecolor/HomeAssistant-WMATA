@@ -83,7 +83,7 @@ class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
         """Initialize the sensor."""
         super().__init__(coordinator)
 
-        self._attr_unique_id = f"{coordinator.unique_id}_{description.key(coordinator)}"
+        self._attr_unique_id = f"{coordinator.unique_id}_{description.key}"
         self.entity_description = description
 
     @callback
