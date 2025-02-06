@@ -86,7 +86,7 @@ class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
         station = coordinator.station
         self._attr_unique_id = f"wmata_{station}_{description.key}"
         self.entity_description = description
-        self._attr_name = f"WMATA {station} {description.name}"
+        self._attr_name = f"{station} {description.name}"
 
     @callback
     def _handle_coordinator_update(self):
