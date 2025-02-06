@@ -40,7 +40,7 @@ If you want to have trains for multiple stations setup, follow these steps:
 4. Select "Submit"
 
 After this is completed, you should see the new entities appear for the new station, like the below:
-<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Multiple%20Stations%20Setup.png?raw=true" width="90%"></p>
+<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Multiple%20Stations%20Sensors.png?raw=true" width="50%"></p>
 
 ## Dashboards
 
