@@ -1,4 +1,3 @@
-import csv
 import os
 import requests
 
@@ -8,19 +7,8 @@ HEADERS = {
     "api_key": api_key
 }
 
-def update_file(filename: str, data: str):
-    new_file = open(filename, "w")
-    new_file.write(data)
-
-
-def get_train_stations():
-    output = requests.get(
-        headers=HEADERS, 
-        url="https://api.wmata.com/Rail.svc/json/jStations"
-    )
-        
-    train_stations = output.json()["Stations"]
-    train_stations.sort(key=lambda x: x['Name'])
+def update_file(train_stations: str, filename: str = "METRO_STATION_CODES.md"):
+    train_stations = get_train_stations()
     
     readme_output = '| Name | Line | Code\n|:-----|:----:|:-----|\n'
     
@@ -56,11 +44,38 @@ def get_train_stations():
     
     print(readme_output)
     
-    update_file("METRO_STATION_CODES.md", readme_output)
+    new_file = open(filename, "w")
+    new_file.write(readme_output)
+
+
+def get_train_stations():
+    output = requests.get(
+        headers=HEADERS, 
+        url="https://api.wmata.com/Rail.svc/json/jStations"
+    )
+        
+    train_stations = output.json()["Stations"]
+    train_stations.sort(key=lambda x: x['Name'])
     
+    return train_stations
+    
+def create_station_dictionary():
+    train_stations = get_train_stations()
+    train_stations.sort(key=lambda x: x['Code'])
+    
+    station_dict = {}
+    
+    print('STATION_CODE_MAP = {')
+    
+    for station in train_stations:
+        print("'%s': '%s'," % (station['Code'], station['Name'].replace("'", "\'")))
+    print('}')
+    
+    # return station_dict
 
 def main():
-    get_train_stations()
+    create_station_dictionary()
+    # update_file(train_stations)
 
 
 if __name__ == "__main__":
