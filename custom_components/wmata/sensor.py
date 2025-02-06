@@ -23,8 +23,8 @@ class WmataSensorEntityDescription(SensorEntityDescription, WmataSensorRequiredK
 
 SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
     WmataSensorEntityDescription(
-        key=lambda coord: f"wmata_{coord.station}_train_1_time",
-        name=lambda coord: f"{coord.station} Train 1 Time",
+        key="wmata_train_1_time",
+        name="Train 1 Time",
         icon="mdi:timer-outline",
         value=lambda coord: coord.data.next_trains[0]["Min"] if coord.data.next_trains[0]["Min"] not in [
             None, "ARR", "BRD"] else 0,
@@ -32,29 +32,29 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         native_unit_of_measurement="minutes",
     ),
     WmataSensorEntityDescription(
-        key=lambda coord: f"wmata_{coord.station}_train_1_line",
-        name=lambda coord: f"{coord.station} Train 1 Line",
+        key="wmata_train_1_line",
+        name="Train 1 Line",
         icon="mdi:train",
         value=lambda coord: LINE_NAME_MAP[coord.data.next_trains[0]["Line"]],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key=lambda coord: f"wmata_{coord.station}_train_1_destination",
-        name=lambda coord: f"{coord.station} Train 1 Destination",
+        key="wmata_train_1_destination",
+        name="Train 1 Destination",
         icon="mdi:location-enter",
         value=lambda coord: coord.data.next_trains[0]["LocationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key=lambda coord: f"wmata_{coord.station}_train_1_car",
-        name=lambda coord: f"{coord.station} Train 1 Car",
+        key="wmata_train_1_car",
+        name="Train 1 Car",
         icon="mdi:train-car-passenger-door",
         value=lambda coord: coord.data.next_trains[0]["Car"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
-        key=lambda coord: f"wmata_{coord.station}_train_1_group",
-        name=lambda coord: f"{coord.station} Train 1 Group",
+        key="wmata_train_1_group",
+        name="Train 1 Group",
         icon="mdi:transit-transfer",
         value=lambda coord: coord.data.next_trains[0]["Group"],
         attributes=lambda coord: {},
