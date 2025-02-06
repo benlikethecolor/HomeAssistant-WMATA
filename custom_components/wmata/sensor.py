@@ -60,29 +60,17 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         attributes=lambda coord: {},
         entity_registry_enabled_default=False,
     ),
-    WmataSensorEntityDescription(
-        key=lambda coord: "wmata_%s_train_2_time" % (coord.station),
-        name=lambda coord: "%s Train 2 Time" % (coord.station),
-        icon="mdi:timer-outline",
-        value=lambda coord: coord.data.next_trains[1]["Min"] if coord.data.next_trains[1]["Min"] not in [
-            None, "ARR", "BRD"] else 0,
-        attributes=lambda coord: {},
-        native_unit_of_measurement="minutes",
-    ),
 )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up the WMATA sensor platform."""
-    # runtime_data = hass.data[DOMAIN][entry.entry_id]
     coordinator = hass.data[DOMAIN][entry.entry_id].coordinator
 
     sensors = []
 
     for description in SENSOR_TYPES:
         sensors.append(WmataSensor(coordinator, description))
-    # for i in range(4):
-    #     sensors.append(WmataSensor(coordinator, i))
     async_add_entities(sensors, False)
 
 
@@ -95,21 +83,15 @@ class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
         """Initialize the sensor."""
         super().__init__(coordinator)
 
-        self._attr_unique_id = f"{coordinator.unique_id}_{description.key}"
+        self._attr_unique_id = f"{coordinator.unique_id}_{description.key(coordinator)}"
         self.entity_description = description
 
     @callback
     def _handle_coordinator_update(self):
         """Handle updated data from the coordinator."""
 
-        self._attr_native_value = self.entity_description.value(
-            self.coordinator)
-        self._attr_extra_state_attributes = {}
-
-        self.async_write_ha_state()
-
-        self._attr_extra_state_attributes = self.entity_description.attributes(
-            self.coordinator)
+        self._attr_native_value = self.entity_description.value(self.coordinator)
+        self._attr_extra_state_attributes = self.entity_description.attributes(self.coordinator)
 
         self.async_write_ha_state()
 
