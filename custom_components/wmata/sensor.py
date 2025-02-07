@@ -289,12 +289,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
     sensors = []
     
-    service_type = coordinator.service_type
-    
-    if service_type == "bus":
+    if coordinator.service_type == "bus":
         for description in BUS_SENSOR_TYPES:
             sensors.append(WmataSensor(coordinator, description))
-    elif service_type == "train":
+    elif coordinator.service_type == "train":
         for description in TRAIN_SENSOR_TYPES:
             sensors.append(WmataSensor(coordinator, description))
     
@@ -309,24 +307,33 @@ class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
     def __init__(self, coordinator: WmataCoordinator, description: WmataSensorEntityDescription) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
-
-        station = coordinator.station.lower()
-        station_name = coordinator.station_name
+        
+        if coordinator.service_type == "bus":
+            location = coordinator.bus_stop.lower()
+            location_name = coordinator.bus_stop_name
+            
+        elif coordinator.service_type == "train":
+            location = coordinator.station.lower()
+            location_name = coordinator.station_name
         
         # _attr_name: name that appears in Home Assistant UI
-        self._attr_name = f"{station_name} {description.name}"
+        self._attr_name = f"{location_name} {description.name}"
         
         # _attr_unique_id: unique ID for the sensor, used to ensure only one instance of the sensor exists, not visible
-        self._attr_unique_id = f"wmata_{station}_{description.key}"
+        self._attr_unique_id = f"wmata_{location}_{description.key}"
         
         # entity_id: ID that appears in Home Assistant UI
-        self.entity_id = f"sensor.wmata_{station}_{description.key}"
+        self.entity_id = f"sensor.wmata_{location}_{description.key}"
         
         self.entity_description = description
 
         # Log the values for debugging
-        _LOGGER.debug("Initializing WmataSensor: station=%s, description.key=%s, unique_id=%s",
-                      station, description.key, self._attr_unique_id)
+        _LOGGER.debug(
+            "Initializing WmataSensor: station=%s, description.key=%s, unique_id=%s", 
+            location, 
+            description.key, 
+            self._attr_unique_id
+        )
 
     @callback
     def _handle_coordinator_update(self):
