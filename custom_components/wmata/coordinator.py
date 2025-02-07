@@ -36,7 +36,7 @@ class WmataCoordinator(DataUpdateCoordinator):
         # bus settings
         if self.service_type == "bus":
             self.bus_stop = config_entry.data[CONF_ID]
-            self.bus_stop_name = ""
+            self.bus_stop_name = self.async_get_bus_stop_name(self.bus_stop)
         
         # train settings
         elif self.service_type == "train":
@@ -119,6 +119,13 @@ class WmataCoordinator(DataUpdateCoordinator):
                 bus_predictions = await response.json()
 
                 return bus_predictions["Predictions"]
+
+    async def async_get_bus_stop_name(self, stop_code: str) -> str:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{URL}/Bus.svc/json/jStopSchedule?StopID={stop_code}", headers=self.headers) as response:
+                stop_schedule = await response.json()
+
+                return stop_schedule["Name"]
 
 
 class APIAuthError(Exception):
