@@ -5,7 +5,7 @@ from __future__ import annotations
 from .const import DOMAIN
 from .coordinator import APIAuthError, WmataCoordinator
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_HOST, CONF_API_KEY, CONF_ID
+from homeassistant.const import CONF_HOST, CONF_API_KEY, CONF_ID, CONF_TYPE
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from typing import Any
@@ -15,10 +15,14 @@ import voluptuous as vol
 
 _LOGGER = logging.getLogger(__name__)
 
+# Add a constant for the type of service
+CONF_SERVICE_TYPE = "service_type"
+
 # required data during user setup
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_API_KEY): str,
+        vol.Required(CONF_SERVICE_TYPE): vol.In(["bus", "train"]),
         vol.Required(CONF_ID): str
     }
 )
@@ -28,7 +32,6 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     """
     called during user setup to validate input
     """
-
     # TODO: when adding user variables for local bus stop or train station, validate these inputs as well
 
     # api = WmataCoordinator(hass, data)
