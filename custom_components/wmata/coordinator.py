@@ -7,11 +7,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 import logging
 import aiohttp
-import requests
 
 _LOGGER = logging.getLogger(__name__)
 
 CONF_SERVICE_TYPE = "service_type"
+
 
 @dataclass
 class APIData:
@@ -33,12 +33,11 @@ class WmataCoordinator(DataUpdateCoordinator):
         self.api_key = config_entry.data[CONF_API_KEY]
         self.service_type = config_entry.data[CONF_SERVICE_TYPE]
         self.headers = {"api_key": self.api_key}
-        
+
         # bus settings
         if self.service_type == "bus":
             self.bus_stop = config_entry.data[CONF_ID]
-            self.bus_stop_name = self.get_bus_stop_name(self.bus_stop)
-        
+
         # train settings
         elif self.service_type == "train":
             self.station = config_entry.data[CONF_ID]
@@ -120,13 +119,6 @@ class WmataCoordinator(DataUpdateCoordinator):
                 bus_predictions = await response.json()
 
                 return bus_predictions["Predictions"]
-
-    def get_bus_stop_name(self, stop_code: str) -> str:
-        # session = aiohttp.ClientSession()
-        response = requests.get(f"{URL}/Bus.svc/json/jStopSchedule?StopID={stop_code}", headers=self.headers)
-        stop_schedule = response.json()
-
-        return stop_schedule["Name"]
 
 
 class APIAuthError(Exception):
