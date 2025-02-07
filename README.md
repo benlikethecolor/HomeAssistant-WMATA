@@ -98,7 +98,6 @@ cards:
 ## Future Improvments?
 
 - Change the way that this is setup, so that you only need one station ID for stations with multiple codes. Just enter one or the other, have the code just search for both while you're there
-- Currently not setup for buses, this will be a future improvement. 
 
 ## Thanks
 
