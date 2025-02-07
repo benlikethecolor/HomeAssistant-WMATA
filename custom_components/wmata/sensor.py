@@ -25,6 +25,14 @@ class WmataSensorEntityDescription(SensorEntityDescription, WmataSensorRequiredK
     """A class that describes sensor entities."""
 
 
+# tuple of all sensors that will then be each called in async_setup_entry
+# might be able to refine this to only do the five types, and then have a loop to create the 6 sensors for each type but this works for now
+# types:
+# time: minutes until train arrives
+# line: color of the line
+# destination: destination of the train (which direction it's going in)
+# car: number of train cars on the train
+# group: group of the train, used for what track a train is on at multiple track stations. not useful for most stations, so including it disabled by default
 SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
     WmataSensorEntityDescription(
         key="train_1_time",
@@ -46,7 +54,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_1_destination",
         name="Train 1 Destination",
         icon="mdi:location-enter",
-        value=lambda coord: coord.data.next_trains[0]["LocationName"],
+        value=lambda coord: coord.data.next_trains[0]["DestinationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -84,7 +92,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_2_destination",
         name="Train 2 Destination",
         icon="mdi:location-enter",
-        value=lambda coord: coord.data.next_trains[1]["LocationName"],
+        value=lambda coord: coord.data.next_trains[1]["DestinationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -122,7 +130,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_3_destination",
         name="Train 3 Destination",
         icon="mdi:location-enter",
-        value=lambda coord: coord.data.next_trains[2]["LocationName"],
+        value=lambda coord: coord.data.next_trains[2]["DestinationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -160,7 +168,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_4_destination",
         name="Train 4 Destination",
         icon="mdi:location-enter",
-        value=lambda coord: coord.data.next_trains[3]["LocationName"],
+        value=lambda coord: coord.data.next_trains[3]["DestinationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -198,7 +206,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_5_destination",
         name="Train 5 Destination",
         icon="mdi:location-enter",
-        value=lambda coord: coord.data.next_trains[4]["LocationName"],
+        value=lambda coord: coord.data.next_trains[4]["DestinationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -236,7 +244,7 @@ SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         key="train_6_destination",
         name="Train 6 Destination",
         icon="mdi:location-enter",
-        value=lambda coord: coord.data.next_trains[5]["LocationName"],
+        value=lambda coord: coord.data.next_trains[5]["DestinationName"],
         attributes=lambda coord: {},
     ),
     WmataSensorEntityDescription(
@@ -279,10 +287,17 @@ class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
 
         station = coordinator.station.lower()
         station_name = coordinator.station_name
+        
+        # _attr_name: name that appears in Home Assistant UI
         self._attr_name = f"{station_name} {description.name}"
+        
+        # _attr_unique_id: unique ID for the sensor, used to ensure only one instance of the sensor exists, not visible
         self._attr_unique_id = f"wmata_{station}_{description.key}"
-        self.entity_description = description
+        
+        # entity_id: ID that appears in Home Assistant UI
         self.entity_id = f"sensor.wmata_{station}_{description.key}"
+        
+        self.entity_description = description
 
         # Log the values for debugging
         _LOGGER.debug("Initializing WmataSensor: station=%s, description.key=%s, unique_id=%s",
