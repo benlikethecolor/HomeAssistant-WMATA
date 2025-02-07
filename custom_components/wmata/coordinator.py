@@ -2,7 +2,7 @@ from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, STATION_CODE_MAP, URL
 from dataclasses import dataclass
 from datetime import timedelta
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_API_KEY, CONF_ID, CONF_TYPE
+from homeassistant.const import CONF_API_KEY, CONF_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 import logging
@@ -10,6 +10,7 @@ import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
 
+CONF_SERVICE_TYPE = "Transit Type"
 
 @dataclass
 class APIData:
@@ -29,7 +30,7 @@ class WmataCoordinator(DataUpdateCoordinator):
         # Set variables from values entered in config flow setup
         self.unique_id = config_entry.entry_id
         self.api_key = config_entry.data[CONF_API_KEY]
-        self.service_type = config_entry.data[CONF_TYPE]
+        self.service_type = config_entry.data[CONF_SERVICE_TYPE]
         self.headers = {"api_key": self.api_key}
         
         # bus settings
