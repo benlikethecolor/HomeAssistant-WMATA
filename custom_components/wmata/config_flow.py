@@ -42,7 +42,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     # except APIAuthError as err:
     #     raise InvalidAuth from err
 
-    return {"title": f"WMATA Integration - {data[CONF_ID]}"}
+    return {"title": f"{data[CONF_ID]}"}
 
 
 class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
