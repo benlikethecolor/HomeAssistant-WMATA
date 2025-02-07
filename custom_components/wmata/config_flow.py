@@ -16,7 +16,7 @@ import voluptuous as vol
 _LOGGER = logging.getLogger(__name__)
 
 # Add a constant for the type of service
-CONF_SERVICE_TYPE = "Transit Type"
+CONF_SERVICE_TYPE = "service_type"
 
 # required data during user setup
 STEP_USER_DATA_SCHEMA = vol.Schema(
