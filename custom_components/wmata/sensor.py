@@ -24,6 +24,24 @@ class WmataSensorRequiredKeysMixin:
 class WmataSensorEntityDescription(SensorEntityDescription, WmataSensorRequiredKeysMixin):
     """A class that describes sensor entities."""
 
+# tuple of all sensors that will then be each called in async_setup_entry
+# might be able to refine this to only do the five types, and then have a loop to create the 6 sensors for each type but this works for now
+# types:
+# minutes: minutes until train arrives
+# routeid: route name
+# directiontext: direction of the bus
+# vehicleid: bus identifier, disabled by default
+# tripid: trip identifier, disabled by default
+BUS_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
+    WmataSensorEntityDescription(
+        key="bus_1_time",
+        name="Bus 1 Time",
+        icon="mdi:timer-outline",
+        value=lambda coord: coord.data.next_buses[0]["Minutes"],
+        attributes=lambda coord: {},
+        native_unit_of_measurement="minutes",
+    ),
+)
 
 # tuple of all sensors that will then be each called in async_setup_entry
 # might be able to refine this to only do the five types, and then have a loop to create the 6 sensors for each type but this works for now
@@ -33,7 +51,7 @@ class WmataSensorEntityDescription(SensorEntityDescription, WmataSensorRequiredK
 # destination: destination of the train (which direction it's going in)
 # car: number of train cars on the train
 # group: group of the train, used for what track a train is on at multiple track stations. not useful for most stations, so including it disabled by default
-SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
+TRAIN_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
     WmataSensorEntityDescription(
         key="train_1_time",
         name="Train 1 Time",
@@ -270,9 +288,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     coordinator = hass.data[DOMAIN][entry.entry_id].coordinator
 
     sensors = []
-
-    for description in SENSOR_TYPES:
-        sensors.append(WmataSensor(coordinator, description))
+    
+    service_type = coordinator.service_type
+    
+    if service_type == "bus":
+        for description in BUS_SENSOR_TYPES:
+            sensors.append(WmataSensor(coordinator, description))
+    elif service_type == "train":
+        for description in TRAIN_SENSOR_TYPES:
+            sensors.append(WmataSensor(coordinator, description))
+    
     async_add_entities(sensors, False)
 
 
