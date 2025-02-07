@@ -10,7 +10,7 @@ import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
 
-CONF_SERVICE_TYPE = "Transit Type"
+CONF_SERVICE_TYPE = "service_type"
 
 @dataclass
 class APIData:
@@ -93,10 +93,10 @@ class WmataCoordinator(DataUpdateCoordinator):
 
             if self.service_type == "train":
                 next_trains = await self.async_get_next_trains_at_station(self.station)
-                return APIData(next_trains=next_trains)
+                return APIData(next_trains=next_trains, next_buses=[])
             elif self.service_type == "bus":
                 next_buses = await self.async_get_next_buses_at_stop(self.bus_stop)
-                return APIData(next_buses=next_buses)
+                return APIData(next_buses=next_buses, next_trains=[])
 
         except APIAuthError as err:
             _LOGGER.error(err)
