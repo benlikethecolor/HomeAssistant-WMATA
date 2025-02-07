@@ -15,6 +15,7 @@ import voluptuous as vol
 
 _LOGGER = logging.getLogger(__name__)
 
+# required data during user setup
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_API_KEY): str,
