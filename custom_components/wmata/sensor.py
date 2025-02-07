@@ -310,7 +310,7 @@ class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
         
         if coordinator.service_type == "bus":
             location = coordinator.bus_stop.lower()
-            location_name = coordinator.bus_stop_name
+            location_name = location
             
         elif coordinator.service_type == "train":
             location = coordinator.station.lower()
