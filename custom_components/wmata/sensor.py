@@ -16,6 +16,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     """Set up the WMATA sensor platform."""
     coordinator = hass.data[DOMAIN][entry.entry_id].coordinator
 
+    # Initialize the coordinator to fetch the bus stop name
+    await coordinator.async_initialize()
+
     sensors = []
 
     if coordinator.service_type == "bus":
@@ -39,7 +42,7 @@ class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
 
         if coordinator.service_type == "bus":
             location = coordinator.bus_stop.lower()
-            location_name = location
+            location_name = coordinator.bus_stop_name
 
         elif coordinator.service_type == "train":
             location = coordinator.station.lower()
