@@ -2,6 +2,10 @@
 
 Integration to connect with the WMATA API to report upcoming trains/buses at local stops. 
 
+<!-- [![Stars](https://img.shields.io/github/stars/benlikethecolor/HomeAssistant-WMATA)](#) -->
+[![Last commit](https://img.shields.io/github/last-commit/benlikethecolor/HomeAssistant-WMATA)](#)
+
+
 <p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Train%20Samples.png?raw=true" width="70%"></p>
 <p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Bus%20Samples.png?raw=true" width="70%"></p>
 
