@@ -1,7 +1,7 @@
 """Constants for the wmata integration"""
 
 
-DEFAULT_SCAN_INTERVAL = 60
+DEFAULT_SCAN_INTERVAL = 30
 DOMAIN = "wmata"
 
 LINE_NAME_MAP = {
