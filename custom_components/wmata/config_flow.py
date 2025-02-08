@@ -12,6 +12,7 @@ from typing import Any
 import aiohttp
 import logging
 import voluptuous as vol
+from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -131,10 +132,11 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "Unexpected exception, please report this error to the developer."
 
             if "base" not in errors:
-                # Remove the old entities
+                # Remove the old entities using the EntityRegistry
+                entity_registry = async_get_entity_registry(self.hass)
                 entities = self.hass.data[DOMAIN][self.config_entry.entry_id].entities
                 for entity in entities:
-                    await entity.async_remove()
+                    entity_registry.async_remove(entity.entity_id)
 
                 # Unload the existing entry
                 await self.hass.config_entries.async_unload(self.config_entry.entry_id)
