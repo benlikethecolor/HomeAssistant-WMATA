@@ -131,10 +131,22 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "Unexpected exception, please report this error to the developer."
 
             if "base" not in errors:
-                # Update the existing config entry with the new data
+                # Remove the old entities
+                entities = self.hass.data[DOMAIN][self.config_entry.entry_id].entities
+                for entity in entities:
+                    await entity.async_remove()
+
+                # Unload the existing entry
+                await self.hass.config_entries.async_unload(self.config_entry.entry_id)
+                
+                # Update the existing config entry with the new data and title
                 self.hass.config_entries.async_update_entry(
                     self.config_entry, data=user_input, title=info["title"]
                 )
+                
+                # Reload the entry to apply the new configuration
+                await self.hass.config_entries.async_setup(self.config_entry.entry_id)
+                await self.hass.config_entries.async_reload(self.config_entry.entry_id)
                 return self.async_abort(reason="reconfigure_successful")
 
         return self.async_show_form(
