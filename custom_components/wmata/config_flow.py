@@ -118,7 +118,6 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 # validate that the setup data is valid and if not handle errors
-                # errors["base"] values must match the values in your strings.json file
                 info = await validate_input(self.hass, user_input)
 
             except CannotConnect:
@@ -134,9 +133,9 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
             if "base" not in errors:
                 # Update the existing config entry with the new data
                 self.hass.config_entries.async_update_entry(
-                    self.config_entry, data=user_input
+                    self.config_entry, data=user_input, title=info["title"]
                 )
-                return self.async_create_entry(title=info["title"], data=user_input)
+                return self.async_abort(reason="reconfigure_successful")
 
         return self.async_show_form(
             step_id="reconfigure", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
