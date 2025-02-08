@@ -87,7 +87,7 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
 
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception, please report this error to the developer.")
-                errors["base"] = "unknown"
+                errors["base"] = "Unexpected exception, please report this error to the developer."
 
             if "base" not in errors:
                 # validation was successful, create a unique id for this instance of your integration and the config entry
@@ -118,17 +118,18 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 # validate that the setup data is valid and if not handle errors
+                # errors["base"] values must match the values in your strings.json file
                 info = await validate_input(self.hass, user_input)
 
             except CannotConnect:
-                errors["base"] = "cannot_connect"
+                errors["base"] = "Connection to the API failed. Please check your network connection and try again."
 
             except InvalidAuth:
-                errors["base"] = "invalid_auth"
+                errors["base"] = "Invalid API key provided. Please check your API key and try again."
 
             except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
+                _LOGGER.exception("Unexpected exception, please report this error to the developer.")
+                errors["base"] = "Unexpected exception, please report this error to the developer."
 
             if "base" not in errors:
                 # Update the existing config entry with the new data
