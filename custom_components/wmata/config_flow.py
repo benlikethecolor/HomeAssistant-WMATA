@@ -36,10 +36,6 @@ class CannotConnect(HomeAssistantError):
 class InvalidAuth(HomeAssistantError):
     """Error to indicate there is invalid auth."""
 
-    def __init__(self, message: str):
-        super().__init__(message)
-        self.message = message
-
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """
@@ -58,8 +54,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
                 return {"title": f"{data[CONF_ID]}"}
 
             else:
-                raise InvalidAuth(
-                    "Invalid API key provided. Please check your API key and try again.")
+                raise InvalidAuth
 
     # return {"title": f"{data[CONF_ID]}"}
 
@@ -85,13 +80,13 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
                 info = await validate_input(self.hass, user_input)
 
             except CannotConnect:
-                errors["base"] = "cannot_connect"
+                errors["base"] = "Connection to the API failed. Please check your network connection and try again."
 
             except InvalidAuth:
-                errors["base"] = "invalid_auth"
+                errors["base"] = "Invalid API key provided. Please check your API key and try again."
 
             except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
+                _LOGGER.exception("Unexpected exception, please report this error to the developer.")
                 errors["base"] = "unknown"
 
             if "base" not in errors:
