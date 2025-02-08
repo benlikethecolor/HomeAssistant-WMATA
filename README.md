@@ -7,12 +7,31 @@ Integration to connect with the WMATA API to report upcoming trains/buses at loc
 
 ## Installation
 
-To install this integration, you need the following:
+To install this integration, you will need to have HACS installed. If you do not have HACS installed, download it by [following the instructions here](https://hacs.xyz/docs/setup/download/).
+
+After HACS is installed, you should be able to click this button to install this integration:
+
+[![Open Bubble Card on Home Assistant Community Store (HACS).](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=benlikethecolor&repository=WMATA&category=integration)
+
+If the above doesn't work, here's the manual installation steps:
+
+1. Open HACS in Home Assistant
+2. Select the three dots in the upper right, and select "Custom repositories"
+3. In the popup, enter the URL of this page in the "Repository" spot, select the type as "Integration", and select "Add"
+4. Within HACS, search for WMATA
+5. Click the WMATA entry, and select "Download"
+6. Now, setup the integration by going to "Settings" > "Devices & services"
+7. Select "Add integration"
+8. Search for "WMATA"
+9. Enter your WMATA API key and metro station ID/bus stop ID
+10. Select "Submit", and you should see the sensors appear!
+
+## Setup
+
+To setup this integration, you will need these values:
 
 - WMATA API key
-- Metro station ID or Bus stop ID
-
-Instructions on how to get these values are below. 
+- Metro Station ID or Bus Stop ID
 
 ### Getting a WMATA API Key
 
