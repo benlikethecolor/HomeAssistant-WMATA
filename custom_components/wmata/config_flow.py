@@ -106,7 +106,6 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return await self.async_step_configure(user_input)
 
-    # TODO: this does work, however it does not alter the original, just create another instance
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Add reconfigure step to allow to reconfigure a config entry."""
 
@@ -114,4 +113,30 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
             self.context["entry_id"]
         )
 
-        return await self.async_step_configure(user_input)
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                # validate that the setup data is valid and if not handle errors
+                info = await validate_input(self.hass, user_input)
+
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+
+            if "base" not in errors:
+                # Update the existing config entry with the new data
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, data=user_input
+                )
+                return self.async_create_entry(title=info["title"], data=user_input)
+
+        return self.async_show_form(
+            step_id="reconfigure", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+        )
