@@ -30,13 +30,6 @@ If the above doesn't work, here's the manual installation steps:
 9. Enter your WMATA API key and metro station ID/bus stop ID
 10. Select "Submit", and you should see the sensors appear!
 
-## Setup
-
-To setup this integration, you will need these values:
-
-- WMATA API key
-- Metro Station ID or Bus Stop ID
-
 ### Getting a WMATA API Key
 
 To get a WMATA API key, follow these steps:
