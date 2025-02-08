@@ -9,6 +9,7 @@ from homeassistant.const import CONF_API_KEY, CONF_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from typing import Any
+import aiohttp
 import logging
 import voluptuous as vol
 
@@ -28,21 +29,39 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
+class CannotConnect(HomeAssistantError):
+    """Error to indicate we cannot connect."""
+
+
+class InvalidAuth(HomeAssistantError):
+    """Error to indicate there is invalid auth."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """
     called during user setup to validate input
     """
-    # TODO: when adding user variables for local bus stop or train station, validate these inputs as well
+    # instead of using the coordinator class, we're just going to call the API directly to validate the API key
+    # doing it this way to avoid making too many changes to the coordinator class when this will work just fine
+    async with aiohttp.ClientSession() as session:
+        async with session.get("https://api.wmata.com/Misc/Validate", headers={"api_key": data[CONF_API_KEY]}) as response:
+            _LOGGER.debug(
+                f"API key validation response code: {response.status}")
+            _LOGGER.debug(f"API key validation response: {response}")
 
-    api = WmataCoordinator(hass, data)
+            if response.status == 200:
+                _LOGGER.debug("API key successfully validated")
+                return {"title": f"{data[CONF_ID]}"}
 
-    try:
-        await api.async_validate_api_key()
+            else:
+                raise InvalidAuth(
+                    "Invalid API key provided. Please check your API key and try again.")
 
-    except APIAuthError as err:
-        raise InvalidAuth from err
-
-    return {"title": f"{data[CONF_ID]}"}
+    # return {"title": f"{data[CONF_ID]}"}
 
 
 class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -101,11 +120,3 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
         return await self.async_step_configure(user_input)
-
-
-class CannotConnect(HomeAssistantError):
-    """Error to indicate we cannot connect."""
-
-
-class InvalidAuth(HomeAssistantError):
-    """Error to indicate there is invalid auth."""
