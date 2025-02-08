@@ -34,13 +34,13 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     """
     # TODO: when adding user variables for local bus stop or train station, validate these inputs as well
 
-    # api = WmataCoordinator(hass, data)
+    api = WmataCoordinator(hass, data)
 
-    # try:
-    #     await api.async_validate_api_key()
+    try:
+        await api.async_validate_api_key()
 
-    # except APIAuthError as err:
-    #     raise InvalidAuth from err
+    except APIAuthError as err:
+        raise InvalidAuth from err
 
     return {"title": f"{data[CONF_ID]}"}
 
