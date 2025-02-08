@@ -30,6 +30,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
     async_add_entities(sensors, False)
 
+    # Track the entities created
+    hass.data[DOMAIN][entry.entry_id].entities = sensors
+
 
 class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
     """Representation of a WMATA sensor."""
