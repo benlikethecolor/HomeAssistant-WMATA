@@ -11,7 +11,7 @@ Integration to connect with the WMATA API to report upcoming trains/buses at loc
 
 ## Installation
 
-To install this integration, you will need to have HACS installed. If you do not have HACS installed, download it by [following the instructions here](https://hacs.xyz/docs/setup/download/).
+To install this integration, you will need to have HACS installed. If you do not have HACS installed, download it by [following the instructions here](https://hacs.xyz/docs/use/download/download/).
 
 After HACS is installed, you should be able to click this button to install this integration:
 
