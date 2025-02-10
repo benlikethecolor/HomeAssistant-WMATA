@@ -69,7 +69,7 @@ async def async_remove_config_entry_device(hass: HomeAssistant, config_entry: Co
     """Delete device if selected from UI."""
     # adding this function shows the delete device option in the UI
     # you may need to do some checks here before allowing devices to be removed
-    
+
     # TODO: no devices, is this needed?
     return True
 
