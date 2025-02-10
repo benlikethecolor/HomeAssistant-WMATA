@@ -10,7 +10,7 @@ HEADERS = {
 }
 
 
-def get_next_trains(train_station:str):
+def get_next_trains(train_station: str):
     output = requests.get(
         headers=HEADERS,
         url="http://api.wmata.com/StationPrediction.svc/json/GetPrediction/%s" % train_station
@@ -21,7 +21,7 @@ def get_next_trains(train_station:str):
 
 def main():
     train_station = input('Enter your train station ID:\n')
-    
+
     get_next_trains(train_station=train_station)
 
 

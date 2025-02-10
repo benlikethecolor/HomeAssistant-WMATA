@@ -10,14 +10,15 @@ HEADERS = {
 }
 
 
-def get_bus_stop_name(bus_stop:str):
+def get_bus_stop_name(bus_stop: str):
     output = requests.get(
         headers=HEADERS,
-        url="http://api.wmata.com/Bus.svc/json/jStopSchedule?StopID=%s" % (bus_stop)
+        url="http://api.wmata.com/Bus.svc/json/jStopSchedule?StopID=%s" % (
+            bus_stop)
     )
 
     print(json.dumps(output.json(), indent=4))
-    
+
     print(output.json()['Stop']['Name'])
 
 
@@ -27,5 +28,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
