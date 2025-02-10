@@ -10,7 +10,7 @@ HEADERS = {
 }
 
 
-def get_next_buses(bus_stop:str):
+def get_next_buses(bus_stop: str):
     output = requests.get(
         headers=HEADERS,
         url="http://api.wmata.com/NextBusService.svc/json/jPredictions?StopID=%s" % bus_stop
@@ -21,7 +21,7 @@ def get_next_buses(bus_stop:str):
 
 def main():
     bus_stop = input('Enter your bus stop ID:\n')
-    
+
     get_next_buses(bus_stop=bus_stop)
 
 

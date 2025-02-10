@@ -87,7 +87,8 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "Invalid API key provided. Please check your API key and try again."
 
             except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception, please report this error to the developer.")
+                _LOGGER.exception(
+                    "Unexpected exception, please report this error to the developer.")
                 errors["base"] = "Unexpected exception, please report this error to the developer."
 
             if "base" not in errors:
@@ -128,7 +129,8 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "Invalid API key provided. Please check your API key and try again."
 
             except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception, please report this error to the developer.")
+                _LOGGER.exception(
+                    "Unexpected exception, please report this error to the developer.")
                 errors["base"] = "Unexpected exception, please report this error to the developer."
 
             if "base" not in errors:
@@ -140,12 +142,12 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
 
                 # Unload the existing entry
                 await self.hass.config_entries.async_unload(self.config_entry.entry_id)
-                
+
                 # Update the existing config entry with the new data and title
                 self.hass.config_entries.async_update_entry(
                     self.config_entry, data=user_input, title=info["title"]
                 )
-                
+
                 # Reload the entry to apply the new configuration
                 await self.hass.config_entries.async_setup(self.config_entry.entry_id)
                 await self.hass.config_entries.async_reload(self.config_entry.entry_id)
