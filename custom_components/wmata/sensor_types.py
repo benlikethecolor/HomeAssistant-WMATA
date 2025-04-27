@@ -3,6 +3,7 @@ from .coordinator import WmataCoordinator
 from collections.abc import Callable
 from dataclasses import dataclass
 from homeassistant.components.sensor import SensorEntityDescription
+from homeassistant.const import UnitOfTime
 from typing import Any
 
 
@@ -33,7 +34,7 @@ BUS_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_buses[0]["Minutes"] if len(
             coord.data.next_buses) > 0 else 0,
         attributes=lambda coord: {},
-        native_unit_of_measurement="minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
     WmataSensorEntityDescription(
         key="bus_1_route",
@@ -76,7 +77,7 @@ BUS_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_buses[1]["Minutes"] if len(
             coord.data.next_buses) > 1 else 0,
         attributes=lambda coord: {},
-        native_unit_of_measurement="minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
     WmataSensorEntityDescription(
         key="bus_2_route",
@@ -118,7 +119,7 @@ BUS_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_buses[2]["Minutes"] if len(
             coord.data.next_buses) > 2 else 0,
         attributes=lambda coord: {},
-        native_unit_of_measurement="minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
     WmataSensorEntityDescription(
         key="bus_3_route",
@@ -161,7 +162,7 @@ BUS_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_buses[3]["Minutes"] if len(
             coord.data.next_buses) > 3 else 0,
         attributes=lambda coord: {},
-        native_unit_of_measurement="minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
     WmataSensorEntityDescription(
         key="bus_4_route",
@@ -204,7 +205,7 @@ BUS_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_buses[4]["Minutes"] if len(
             coord.data.next_buses) > 4 else 0,
         attributes=lambda coord: {},
-        native_unit_of_measurement="minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
     WmataSensorEntityDescription(
         key="bus_5_route",
@@ -247,7 +248,7 @@ BUS_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_buses[5]["Minutes"] if len(
             coord.data.next_buses) > 5 else 0,
         attributes=lambda coord: {},
-        native_unit_of_measurement="minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
     WmataSensorEntityDescription(
         key="bus_6_route",
@@ -301,7 +302,7 @@ TRAIN_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_trains[0]["Min"] if len(
             coord.data.next_trains) > 0 and coord.data.next_trains[0]["Min"] not in [None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
-        native_unit_of_measurement="minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
     WmataSensorEntityDescription(
         key="train_1_line",
@@ -343,7 +344,7 @@ TRAIN_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_trains[1]["Min"] if len(
             coord.data.next_trains) > 1 and coord.data.next_trains[1]["Min"] not in [None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
-        native_unit_of_measurement="minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
     WmataSensorEntityDescription(
         key="train_2_line",
@@ -385,7 +386,7 @@ TRAIN_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_trains[2]["Min"] if len(
             coord.data.next_trains) > 2 and coord.data.next_trains[2]["Min"] not in [None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
-        native_unit_of_measurement="minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
     WmataSensorEntityDescription(
         key="train_3_line",
@@ -427,7 +428,7 @@ TRAIN_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_trains[3]["Min"] if len(
             coord.data.next_trains) > 3 and coord.data.next_trains[3]["Min"] not in [None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
-        native_unit_of_measurement="minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
     WmataSensorEntityDescription(
         key="train_4_line",
@@ -469,7 +470,7 @@ TRAIN_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_trains[4]["Min"] if len(
             coord.data.next_trains) > 4 and coord.data.next_trains[4]["Min"] not in [None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
-        native_unit_of_measurement="minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
     WmataSensorEntityDescription(
         key="train_5_line",
@@ -511,7 +512,7 @@ TRAIN_SENSOR_TYPES: tuple[WmataSensorEntityDescription, ...] = (
         value=lambda coord: coord.data.next_trains[5]["Min"] if len(
             coord.data.next_trains) > 5 and coord.data.next_trains[5]["Min"] not in [None, "ARR", "BRD"] else 0,
         attributes=lambda coord: {},
-        native_unit_of_measurement="minutes",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
     ),
     WmataSensorEntityDescription(
         key="train_6_line",
