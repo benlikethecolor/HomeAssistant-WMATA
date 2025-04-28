@@ -5,9 +5,7 @@ Integration to connect with the WMATA API to report upcoming trains/buses at loc
 <!-- [![Stars](https://img.shields.io/github/stars/benlikethecolor/HomeAssistant-WMATA)](#) -->
 [![Last commit](https://img.shields.io/github/last-commit/benlikethecolor/HomeAssistant-WMATA)](#)
 
-
-<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Train%20Samples.png?raw=true" width="70%"></p>
-<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Bus%20Samples.png?raw=true" width="70%"></p>
+<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Tile.png?raw=true" width="80%"></p>
 
 ## Installation
 
@@ -67,6 +65,23 @@ After this is completed, you should see the new entities appear for the new stat
 
 ## Dashboards
 
+### Tile Card
+
+If you use tile card, here's a quick sample I've created using this integration.
+
+<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Tile.png?raw=true" width="80%"></p>
+
+```yaml
+type: tile
+  entity: sensor.wmata_g01_train_1
+  features_position: bottom
+  vertical: false
+  state_content:
+    - state
+    - Line
+    - Destination
+```
+
 ### Bubble Card
 
 If you use bubble card, here's a quick sample I've created using this integration. 
@@ -94,7 +109,7 @@ sub_button:
     state_background: true
 ```
 
-### Mushroom
+<!-- ### Mushroom
 
 If you use mushroom, here's a quick sample I've created using this integration. 
 
@@ -109,7 +124,7 @@ cards:
     entity: sensor.wmata_a01_train_1_line
   - type: custom:mushroom-entity-card
     entity: sensor.wmata_a01_train_1_time
-```
+``` -->
 
 ## Future Improvements
 
