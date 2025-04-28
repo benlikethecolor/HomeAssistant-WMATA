@@ -109,7 +109,7 @@ sub_button:
     state_background: true
 ```
 
-### Mushroom
+<!-- ### Mushroom
 
 If you use mushroom, here's a quick sample I've created using this integration. 
 
@@ -124,7 +124,7 @@ cards:
     entity: sensor.wmata_a01_train_1_line
   - type: custom:mushroom-entity-card
     entity: sensor.wmata_a01_train_1_time
-```
+``` -->
 
 ## Future Improvements
 
