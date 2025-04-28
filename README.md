@@ -67,6 +67,23 @@ After this is completed, you should see the new entities appear for the new stat
 
 ## Dashboards
 
+### Tile Card
+
+If you use tile card, here's a quick sample I've created using this integration.
+
+<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Tile%20Card.png?raw=true" width="90%"></p>
+
+```yaml
+type: tile
+  entity: sensor.wmata_g01_train_1
+  features_position: bottom
+  vertical: false
+  state_content:
+    - state
+    - Line
+    - Destination
+```
+
 ### Bubble Card
 
 If you use bubble card, here's a quick sample I've created using this integration. 
