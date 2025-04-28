@@ -92,21 +92,23 @@ If you use bubble card, here's a quick sample I've created using this integratio
 type: custom:bubble-card
 card_type: button
 button_type: name
-name: Train 1
-icon: mdi:train
+name: Benning Road Train 1
+icon: mdi:subway
 sub_button:
-  - entity: sensor.wmata_a01_train_1_destination
-    show_name: false
+  - entity: sensor.wmata_g01_train_1
+    show_attribute: true
+    name: Line
+    attribute: Line
+    show_icon: false
+  - entity: sensor.wmata_g01_train_1
+    show_attribute: true
+    name: Destination
+    attribute: Destination
+    show_icon: false
+  - entity: sensor.wmata_g01_train_1
+    name: Time
     show_state: true
-  - entity: sensor.wmata_a01_train_1_line
-    show_state: true
-  - entity: sensor.wmata_a01_train_1_time
-    show_state: true
-    show_attribute: false
-    show_name: false
-    show_last_changed: false
-    show_background: true
-    state_background: true
+    icon: mdi:clock-time-eight-outline
 ```
 
 <!-- ### Mushroom
