@@ -71,7 +71,7 @@ After this is completed, you should see the new entities appear for the new stat
 
 If you use tile card, here's a quick sample I've created using this integration.
 
-<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Tile%20Card.png?raw=true" width="90%"></p>
+<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Tile.png?raw=true" width="80%"></p>
 
 ```yaml
 type: tile
