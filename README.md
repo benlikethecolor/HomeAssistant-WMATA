@@ -108,6 +108,33 @@ sub_button:
     show_background: true
     state_background: true
 ```
+### Mushroom Template Badge
+
+The [Mushroom package](https://github.com/piitaya/lovelace-mushroom) allows you to make a nice [Mushroom Template badge](https://github.com/piitaya/lovelace-mushroom/blob/main/docs/badges/template.md) like so:
+
+![Badge image](docs/images/Badge.png)
+
+```yaml
+type: custom:mushroom-template-badge
+content: >-
+  {% set bus_times = states.sensor | selectattr('entity_id', 'search',
+  'wmata_STOP_ID_bus_') | map(attribute='state') | list %}
+
+  {{ bus_times | reject('equalto', 'unknown') | map('regex_replace', '^(.+)$',
+  '\\1m') | join(' • ') }}
+icon: mdi:bus
+color: green
+visibility:
+  - condition: state
+    entity: sensor.wmata_STOP_ID_bus_1
+    state_not:
+      - unavailable
+      - unknown
+label: Next buses
+entity: sensor.wmata_STOP_ID_bus_1
+tap_action:
+  action: more-info
+```
 
 <!-- ### Mushroom
 
