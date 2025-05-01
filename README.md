@@ -47,9 +47,7 @@ Unfortunately there's no good way to see a list of all of the bus station stop o
 
 ### Getting Your Bus Stop ID
 
-Similar to the metro station ID process, there's no good way to get your bus stop ID. The easiest way is to check your bus stop, the sign will show a 7 digit number on the bottom right that is the bus stop ID. 
-
-Another option is to use the script in this repository in /scripts/get_closest_bus_stop.py. If you run this, you'll enter your latitude and longitude and it will show you the closest bus stops. One of these options should be able to get you the bus stop ID you're looking for. 
+To get your Bus Stop ID, use WMATA's [busETA](https://buseta.wmata.com/) website to locate your stop. The Bus Stop ID is a 7-digit code. Alternatively, the sign physically placed by your bus stop should have the ID printed on the bottom-right.
 
 ## Setting Up Multiple Stations/Stops
 
