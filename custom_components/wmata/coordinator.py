@@ -69,7 +69,10 @@ class WmataCoordinator(DataUpdateCoordinator):
     async def async_initialize(self):
         """Asynchronously initialize additional attributes."""
         if self.service_type == "bus":
-            self.bus_stop_name = await self.async_get_bus_stop_name(self.bus_stop)
+            data = await self.async_get_bus_data_at_stop(self.bus_stop)
+            self.bus_stop_name = data["stop_name"]
+            
+            
 
     async def async_validate_api_key(self) -> bool:
         async with aiohttp.ClientSession() as session:
@@ -101,7 +104,8 @@ class WmataCoordinator(DataUpdateCoordinator):
                 next_trains = await self.async_get_next_trains_at_station(self.station)
                 return APIData(next_trains=next_trains, next_buses=[])
             elif self.service_type == "bus":
-                next_buses = await self.async_get_next_buses_at_stop(self.bus_stop)
+                data = await self.async_get_bus_data_at_stop(self.bus_stop)
+                next_buses = data["predictions"]
                 return APIData(next_buses=next_buses, next_trains=[])
 
         except APIAuthError as err:
@@ -119,18 +123,19 @@ class WmataCoordinator(DataUpdateCoordinator):
 
                 return train_predictions["Trains"]
 
-    async def async_get_next_buses_at_stop(self, stop_code: str) -> list:
+    async def async_get_bus_data_at_stop(self, stop_code: str) -> dict:
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{URL}/NextBusService.svc/json/jPredictions?StopID={stop_code}", headers=self.headers) as response:
-                bus_predictions = await response.json()
+            async with session.get(
+                f"{URL}/NextBusService.svc/json/jPredictions?StopID={stop_code}",
+                headers=self.headers,
+            ) as response:
+                data = await response.json()
 
-                return bus_predictions["Predictions"]
+                return {
+                    "stop_name": data.get("StopName"),
+                    "predictions": data.get("Predictions", []),
+                }
 
-    async def async_get_bus_stop_name(self, stop_code: str) -> str:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{URL}/Bus.svc/json/jStopSchedule?StopID={stop_code}", headers=self.headers) as response:
-                stop_schedule = await response.json()
-                return stop_schedule["Stop"]["Name"]
 
 
 class APIAuthError(Exception):
