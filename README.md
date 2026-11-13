@@ -49,6 +49,8 @@ Open **Settings → Devices & services → Add integration → WMATA**. Enter th
 | Metrobus | Seven-digit stop ID from the stop sign | Stop device with an Arrivals sensor |
 | Systemwide train map | Completes after validation | WMATA network device with a Trains sensor |
 
+Find a seven-digit bus stop ID using [WMATA busETA](https://buseta.wmata.com/) or the number printed on the stop sign.
+
 Add another entry for each additional station or stop. You can reuse the same key. One network entry covers the systemwide map.
 
 Transfer stations automatically include both platform codes. Either code works. A [station code reference](docs/METRO_STATION_CODES.md) is also available.
