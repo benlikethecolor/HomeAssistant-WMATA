@@ -1,0 +1,109 @@
+{
+  "title": "WMATA",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to WMATA",
+        "description": "Add a station, bus stop or systemwide train map. You can add more entries later. Get a subscribed API key from {api_key_url}.",
+        "data": {
+          "api_key": "API key",
+          "service_type": "Service"
+        }
+      },
+      "location": {
+        "title": "Choose your station or bus stop",
+        "description": "Rail: choose a station or enter its code; all platforms and lines are included. Bus: enter the seven-digit stop ID. Each location gets one arrival board. Add optional saved journeys using Configure after setup.",
+        "data": {
+          "id": "Station or bus stop"
+        }
+      },
+      "reconfigure": {
+        "title": "Update API key",
+        "data": {
+          "api_key": "API key"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect to WMATA",
+        "description": "Enter a working WMATA API key.",
+        "data": {
+          "api_key": "API key"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "WMATA rejected the API key. Check your developer subscription and key.",
+      "cannot_connect": "Unable to connect to WMATA. Try again later.",
+      "invalid_location": "Enter a valid rail station code or seven-digit bus stop ID."
+    },
+    "abort": {
+      "already_configured": "This station or bus stop is already configured.",
+      "reauth_successful": "WMATA credentials updated.",
+      "reconfigure_successful": "WMATA credentials updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Station board and saved journeys",
+        "menu_options": {
+          "settings": "Polling settings",
+          "add_journey": "Add a journey",
+          "edit_journey": "Edit a journey",
+          "remove_journey": "Remove a journey"
+        }
+      },
+      "settings": {
+        "title": "Polling settings",
+        "data": {
+          "scan_interval": "Polling interval in seconds (15\u2013300)"
+        }
+      },
+      "add_journey": {
+        "title": "Add a saved journey",
+        "description": "Match any selected line/route and any selected destination. A train destination means its terminus, not an intermediate station you want to visit. Rail directions describe travel toward the next station and depend on the station and destination. Unknown directions do not match a direction filter. Empty filters accept all arrivals. Journey sensors share the station board\u2019s requests.",
+        "data": {
+          "name": "Journey name",
+          "lines": "Rail lines (empty means all)",
+          "destinations": "Train destinations / termini (empty means all)",
+          "routes": "Bus routes (comma-separated; empty means all)",
+          "direction_id": "Bus direction (optional)",
+          "rail_direction": "Travel direction (optional)"
+        }
+      },
+      "journey": {
+        "title": "Edit saved journey",
+        "description": "Match any selected line/route and any selected destination. A train destination means its terminus, not an intermediate station you want to visit. Rail directions describe travel toward the next station and depend on the station and destination. Unknown directions do not match a direction filter. Empty filters accept all arrivals. Journey sensors share the station board\u2019s requests.",
+        "data": {
+          "name": "Journey name",
+          "lines": "Rail lines (empty means all)",
+          "destinations": "Train destinations / termini (empty means all)",
+          "routes": "Bus routes (comma-separated; empty means all)",
+          "direction_id": "Bus direction (optional)",
+          "rail_direction": "Travel direction (optional)"
+        }
+      },
+      "edit_journey": {
+        "title": "Choose a journey to edit",
+        "data": {
+          "journey_id": "Journey"
+        }
+      },
+      "remove_journey": {
+        "title": "Choose a journey to remove",
+        "description": "This removes its sensor. The station arrival board is unaffected.",
+        "data": {
+          "journey_id": "Journey"
+        }
+      }
+    },
+    "error": {
+      "invalid_name": "Enter a journey name.",
+      "duplicate_name": "A journey with this name already exists at this station."
+    },
+    "abort": {
+      "no_journeys": "No saved journeys exist for this station yet. Choose Add a journey to create one.",
+      "journey_not_found": "This journey no longer exists. Reopen Configure."
+    }
+  }
+}

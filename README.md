@@ -1,140 +1,212 @@
-# HomeAssistant-WMATA
+# WMATA for Home Assistant
 
-Integration to connect with the WMATA API to report upcoming trains/buses at local stops. 
+Live Metrorail and Metrobus arrival boards, saved journeys for automations, and an interactive train map.
 
-<!-- [![Stars](https://img.shields.io/github/stars/benlikethecolor/HomeAssistant-WMATA)](#) -->
-[![Last commit](https://img.shields.io/github/last-commit/benlikethecolor/HomeAssistant-WMATA)](#)
+**Requires Home Assistant 2026.11.1 or newer.** Both dashboard cards and their JavaScript dependencies are bundled.
 
-<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Tile.png?raw=true" width="80%"></p>
+**Upgrading from 2.x?** Version 4 replaces numbered train/bus sensors with one board per location. Read the [upgrade guide](docs/UPGRADING.md) first.
 
-## Installation
+## Quick start
 
-To install this integration, you will need to have HACS installed. If you do not have HACS installed, download it by [following the instructions here](https://hacs.xyz/docs/use/download/download/).
+### 1. Get an API key
 
-After HACS is installed, you should be able to click this button to install this integration:
+1. Create a [WMATA developer account](https://developer.wmata.com/).
+2. Subscribe to a product covering the APIs you want to use.
+3. Copy its subscription key from your developer profile.
 
-[![Open Bubble Card on Home Assistant Community Store (HACS).](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=benlikethecolor&repository=WMATA&category=integration)
+Creating an account alone does not activate API access. Setup checks access to the selected service and reports an error while you can still edit the key.
 
-If the above doesn't work, here's the manual installation steps:
+| Feature | Required APIs |
+| --- | --- |
+| Rail boards | Rail Station Information and Real-Time Rail Predictions |
+| Bus boards | Bus Route and Stop Methods and Real-Time Bus Predictions |
+| Train map | Train Positions, including Standard Routes and Track Circuits |
+| Station popups on the map | Real-Time Rail Predictions |
 
-1. Open HACS in Home Assistant
-2. Select the three dots in the upper right, and select "Custom repositories"
-3. In the popup, enter the URL of this page in the "Repository" spot, select the type as "Integration", and select "Add"
-4. Within HACS, search for WMATA
-5. Click the WMATA entry, and select "Download"
-6. Now, setup the integration by going to "Settings" > "Devices & services"
-7. Select "Add integration"
-8. Search for "WMATA"
-9. Enter your WMATA API key and metro station ID/bus stop ID
-10. Select "Submit", and you should see the sensors appear!
+### 2. Install
 
-### Getting a WMATA API Key
+**HACS**
 
-To get a WMATA API key, follow these steps:
+Open HACS → menu → Custom repositories. Add this repository URL, select category Integration, download WMATA, and restart HA.
 
-1. Sign up for a new [WMATA developer account here](https://developer.wmata.com/)
-2. After your account is created, go to "Products", and select "Default Tier"
-3. On this page, enter the name of your new API key (ex: "Home assistant"), agree to the terms of use, and select "Subscribe"
-4. After your key is created, it will show you your API key, enter that in the installation steps
+https://github.com/benlikethecolor/HomeAssistant-WMATA
 
-If you ever lose or forget your API details, you can find it [on your profile](https://developer.wmata.com/profile) under "Subscriptions". 
+[Open repository in HACS](https://my.home-assistant.io/redirect/hacs_repository/?owner=benlikethecolor&repository=HomeAssistant-WMATA&category=integration)
 
-### Getting Your Metro Station ID
+**Manual installation**
 
-Unfortunately there's no good way to see a list of all of the bus station stop or metro station codes online outside of using the API. I've provided a list of the [metro station codes in this file](https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/METRO_STATION_CODES.md). Simply open it, find your local metro station, and add the code next to it. 
+Copy custom_components/wmata into your HA configuration's custom_components directory. The resulting path must include custom_components/wmata/manifest.json. Restart HA.
 
-**IMPORTANT NOTE:** if you see that your "local" metro station has two entries, make sure to pick the entry with the line you want. For example, say your local metro station is "Metro Center", and you ride the orange line. In this case, you would select the station code "C01", not "A01". 
+If using the release ZIP, extract it into the HA configuration directory and retain its custom_components/wmata directory structure.
 
-### Getting Your Bus Stop ID
+### 3. Choose a service
 
-Similar to the metro station ID process, there's no good way to get your bus stop ID. The easiest way is to check your bus stop, the sign will show a 7 digit number on the bottom right that is the bus stop ID. 
+Open **Settings → Devices & services → Add integration → WMATA**. Enter the key and choose:
 
-Another option is to use the script in this repository in /scripts/get_closest_bus_stop.py. If you run this, you'll enter your latitude and longitude and it will show you the closest bus stops. One of these options should be able to get you the bus stop ID you're looking for. 
+| Service | Next input | Created in HA |
+| --- | --- | --- |
+| Metrorail | Station name/code | Station device with an Arrivals sensor |
+| Metrobus | Seven-digit stop ID from the stop sign | Stop device with an Arrivals sensor |
+| Systemwide train map | Completes after validation | WMATA network device with a Trains sensor |
 
-## Setting Up Multiple Stations/Stops
+Add another entry for each additional station or stop. You can reuse the same key. One network entry covers the systemwide map.
 
-If you want to have buses/trains for multiple stations setup, follow these steps:
+Transfer stations automatically include both platform codes. Either code works. A [station code reference](docs/METRO_STATION_CODES.md) is also available.
 
-1. Go to "Settings" > "Integrations" > "WMATA"
-2. Select "Add Hub"
-3. Enter your API key again, along with the new station/stop ID
-4. Select "Submit"
+### 4. Add a card
 
-After this is completed, you should see the new entities appear for the new station, like the below:
-<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Multiple%20Stations%20Sensors.png?raw=true" width="50%"></p>
+Refresh the browser after restarting HA. Edit a dashboard, select Add card, and search for **WMATA Station Board** or **WMATA train map**.
 
-## Dashboards
+Choose the entity by its displayed name in the editor. Cards load automatically. No separate card repository or resource entry is needed.
 
-### Tile Card
+![Station board with illustrative arrivals](docs/images/station-board-v4.jpg)
 
-If you use tile card, here's a quick sample I've created using this integration.
+## Arrival boards
 
-<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Tile.png?raw=true" width="80%"></p>
+Each station/stop has one sensor. Its numeric state is minutes until the next arrival. Its arrivals attribute contains the complete ordered list.
 
-```yaml
-type: tile
-  entity: sensor.wmata_g01_train_1
-  features_position: bottom
-  vertical: false
-  state_content:
-    - state
-    - Line
-    - Destination
-```
+~~~yaml
+type: custom:wmata-station-card
+entity: sensor.wmata_k01_arrivals
+max_rows: 8
+~~~
 
-### Bubble Card
+The card editor exposes title, row count, appearance and visibility options. Interactive line/route and destination filters retain selections during updates and reset on a page reload. For permanent filters:
 
-If you use bubble card, here's a quick sample I've created using this integration. 
+~~~yaml
+type: custom:wmata-station-card
+entity: sensor.wmata_k01_arrivals
+title: Silver to Ashburn
+lines: [SV]
+destinations: [N12]
+max_rows: 5
+show_filters: false
+show_updated: true
+~~~
 
-<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Bubble%20Card.png?raw=true" width="90%"></p>
+| Option | Default | Values |
+| --- | --- | --- |
+| entity | Required | Board or saved journey sensor |
+| title | Station/journey name | Custom heading |
+| max_rows | 8 | Integer, 1–30 |
+| show_filters | true | Interactive filtering controls |
+| show_updated | true | Display update age |
+| appearance | standard | standard, daylight, orbit, bento |
+| lines | All | Rail codes, e.g. [BL, SV] |
+| routes | All | Bus route IDs, e.g. [D34] |
+| destinations | All | Exact API destination codes, e.g. [N12] |
 
-```yaml
-type: custom:bubble-card
-card_type: button
-button_type: name
-name: Benning Road Train 1
-icon: mdi:subway
-sub_button:
-  - entity: sensor.wmata_g01_train_1
-    show_attribute: true
-    name: Line
-    attribute: Line
-    show_icon: false
-  - entity: sensor.wmata_g01_train_1
-    show_attribute: true
-    name: Destination
-    attribute: Destination
-    show_icon: false
-  - entity: sensor.wmata_g01_train_1
-    name: Time
-    show_state: true
-    icon: mdi:clock-time-eight-outline
-```
+Appearance presets style this card independently of any personal dashboard layout.
 
-<!-- ### Mushroom
+| State | Meaning |
+| --- | --- |
+| Number | Minutes until the next predicted arrival |
+| 0 | Arriving, boarding, or an API estimate of zero minutes |
+| unknown | No numeric prediction is available |
+| unavailable | The request failed or the entry has not loaded |
 
-If you use mushroom, here's a quick sample I've created using this integration. 
+Rows retain arriving, boarding, delayed and Last train labels. Destination names are expanded when WMATA supplies a recognizable station code or abbreviation. Missing destinations remain unavailable.
 
-<p align="center"><img src="https://github.com/benlikethecolor/HomeAssistant-WMATA/blob/main/docs/images/Mushroom.png?raw=true" width="80%"></p>
+## Saved journeys and automations
 
-```yaml
-type: horizontal-stack
-cards:
-  - type: custom:mushroom-entity-card
-    entity: sensor.wmata_a01_train_1_destination
-  - type: custom:mushroom-entity-card
-    entity: sensor.wmata_a01_train_1_line
-  - type: custom:mushroom-entity-card
-    entity: sensor.wmata_a01_train_1_time
-``` -->
+1. Add the station or stop as a WMATA entry.
+2. Open its **Configure → Add a journey**.
+3. Name it, such as Silver to Ashburn.
+4. Select lines, train termini and optional travel direction, or bus routes and direction.
+5. Save, then find its sensor on the station/stop device.
 
-## Future Improvements
+The sensor's numeric value is minutes until the next matching arrival. Subsequent matching arrivals remain in its attributes. Edit and remove journeys through Configure. Renaming preserves identity. Removing a journey removes its entity.
 
-- Change the way that this is setup so that you only need one station ID for stations with multiple codes. Just enter one or the other, have the code just search for both while you're there
-- Make a better interactive way to find your bus stop ID when initializing the integration
+Empty filters accept all values. Multiple selections within a filter use OR. Populated filters combine with AND. Rail rows show station-specific travel directions, such as Eastbound or Northbound. These follow the route toward the next station, including branch changes, rather than the prediction group number. See the [station direction reference](docs/RAIL_DIRECTIONS.md). Unknown or terminating directions are left unavailable.
 
-## Thanks
+**Choose the train's terminus.** An arbitrary intermediate station does not determine whether a train will stop there. For westbound Silver trains terminating at Ashburn, choose Ashburn.
 
-- WMATA for providing this API
-- [@walrus416](https://github.com/walrus416) for making a [similar integration](https://github.com/walrus416/ha-wmata/tree/master) as a starting point
-- [@msp1974](https://github.com/msp1974) for providing [helpful integration examples](https://github.com/msp1974/HAIntegrationExamples)
+Bus routes are comma-separated IDs. Both direction 0 and direction 1 are valid. Inspect the stop board's direction and direction_id attributes to identify the direction you need.
+
+In an automation's Numeric state entity picker, search for the station or journey by name. Below 6 fires when its value enters that numeric range. To check trains when you leave home, use leaving home as the trigger and the ETA as a condition.
+
+Replace the entity and notification action in this example with yours:
+
+~~~yaml
+alias: Silver train approaching
+triggers:
+  - trigger: numeric_state
+    entity_id: sensor.wmata_court_house_silver_to_ashburn
+    below: 6
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      message: A matching Silver Line train is within five minutes.
+mode: single
+~~~
+
+Find the actual ID in the entity picker or Settings → Devices & services → WMATA → the station device → Entities. HA can retain a customized ID.
+
+The map's Trains sensor counts reported network trains. For arrival automations at a station viewed on the map, add a station entry and optional journey.
+
+## Live train map
+
+Add a Systemwide train map entry, then add the WMATA train map card:
+
+~~~yaml
+type: custom:wmata-train-map
+entity: sensor.wmata_network_trains
+view: geographic
+theme_mode: auto
+height: 850
+~~~
+
+OpenStreetMap is the default. Map view switches to the official diagram. Click a train for its full line name, destination, service and circuit details. Click a station for upcoming arrivals across all its platforms. Station popups refresh while open and work without separate station entries.
+
+Zoom, Fit network, full screen and drag-resize controls are included. Last refreshed records the latest successful network request in your browser's local time.
+
+![Geographic map with illustrative fixture positions](docs/images/train-map-v4.jpg)
+
+| Option | Default | Values |
+| --- | --- | --- |
+| entity | Automatically suggested | Network Trains sensor |
+| view | geographic | geographic or diagram |
+| theme_mode | auto | auto, dark or light |
+| dark_mode | Unset | Optional boolean override of theme_mode |
+| height | 750 | Pixels, 250–1600 |
+| zoom | 1 | Diagram zoom, 1–4 |
+| tile_url | OSM tiles | Alternate tile-provider template |
+| tile_attribution | OSM attribution | Attribution required by your provider |
+
+Use theme_mode: dark to force dark mode, or view: diagram to open the official map by default.
+
+Positions are estimates interpolated by circuit order along route geometry. Circuit lengths are not supplied by the feed. Connected side tracks are represented near the closest mapped circuit. The coverage count includes trains without locatable circuits.
+
+The basemap uses OSM tiles. Rail geometry comes from WMATA's public GIS data. Leaflet and geometry are bundled locally. Geographic tiles require access to the selected provider. WMATA keys stay in HA. See [map data sources](custom_components/wmata/GEO_SOURCES.md).
+
+## Polling and credentials
+
+Configure → Polling settings controls each entry's interval, default 30 seconds, range 15–300 seconds. Journeys share their station's polling, and cards share their entry's data. Station popups fetch on demand with a shared 30-second cache.
+
+Entries using the same key share pacing, station-catalog caching and rate-limit cooldowns. Increase intervals if tracking many locations or sharing a key with other apps.
+
+Use Reconfigure to change a key. Invalid keys trigger reauthentication. Frequently changing arrival arrays, map geometry and timestamps are excluded from recorder attribute history but remain available in live state and templates.
+
+## Troubleshooting
+
+| Problem | Check |
+| --- | --- |
+| WMATA missing from Add integration | Folder path, minimum HA version, and restart |
+| API key rejected | Active subscription covering the required service APIs |
+| Unknown card type | Refresh the browser and check Settings → System → Logs for setup failures |
+| Old manually added card resource | Remove obsolete WMATA resources, refresh, and use automatic card loading |
+| Empty board | Service hours, station/stop code and card filters |
+| Unknown journey | Match its filters against the live board attributes |
+| Blank basemap with visible routes | Browser access to the tile provider |
+| Some trains have no marker | Reported circuits may be absent from available geometry |
+| Unavailable sensors | Connection, rate-limit or subscription errors in HA logs |
+
+Logs use custom_components.wmata. Include your HA/integration versions, service type, station/stop code and relevant errors when reporting problems. Remove credentials before sharing files.
+
+## Development
+
+See the [4.6.3 changes and validation](docs/RELEASE_NOTES_4_6_3.md) and [4.6.2 verification report](docs/RELEASE_VERIFICATION.md) for completed checks and the remaining HACS check.
+
+See [development and release verification](docs/DEVELOPMENT.md) for tests, reproducible geometry generation and packaging.
+
+WMATA provides the transit data. Thanks to [walrus416](https://github.com/walrus416/ha-wmata) for the original inspiration and [msp1974](https://github.com/msp1974/HAIntegrationExamples) for integration examples.

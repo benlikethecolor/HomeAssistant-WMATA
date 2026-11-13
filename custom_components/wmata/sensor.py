@@ -1,89 +1,149 @@
-import logging
-from .const import DOMAIN
-from .coordinator import WmataCoordinator
-from .sensor_types import BUS_SENSOR_TYPES, TRAIN_SENSOR_TYPES, WmataSensorEntityDescription
-from homeassistant.components.sensor import SensorEntity
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+"""One station board and optional saved journeys, without numbered slots."""
+
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.const import UnitOfTime
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .const import CONF_JOURNEYS, DOMAIN
+from .coordinator import WmataCoordinator
+from .predictions import filter_arrivals
 
-_LOGGER = logging.getLogger(__name__)
-
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    """Set up the WMATA sensor platform."""
-    coordinator = hass.data[DOMAIN][entry.entry_id].coordinator
-
-    # Initialize the coordinator to fetch the bus stop name
-    await coordinator.async_initialize()
-
-    sensors = []
-
-    if coordinator.service_type == "bus":
-        for description in BUS_SENSOR_TYPES:
-            sensors.append(WmataSensor(coordinator, description))
-    elif coordinator.service_type == "train":
-        for description in TRAIN_SENSOR_TYPES:
-            sensors.append(WmataSensor(coordinator, description))
-
-    async_add_entities(sensors, False)
-
-    # Track the entities created
-    hass.data[DOMAIN][entry.entry_id].entities = sensors
+PARALLEL_UPDATES = 0
 
 
-class WmataSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
-    """Representation of a WMATA sensor."""
+async def async_setup_entry(hass, entry, async_add_entities) -> None:
+    """Reconcile only this entry's entities, including removed saved journeys."""
+    coordinator = entry.runtime_data
+    if entry.data["service_type"] == "map":
+        async_add_entities([NetworkMapSensor(coordinator)])
+        return
+    sensors = [WmataBoardSensor(coordinator)]
+    sensors.extend(
+        WmataJourneySensor(coordinator, journey)
+        for journey in entry.options.get(CONF_JOURNEYS, [])
+    )
+    active = {sensor.unique_id for sensor in sensors}
+    registry = er.async_get(hass)
+    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if (
+            entity.platform == DOMAIN
+            and entity.domain == "sensor"
+            and entity.unique_id not in active
+        ):
+            registry.async_remove(entity.entity_id)
+    async_add_entities(sensors)
+
+
+class WmataBoardSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
+    """Primary value is the next ETA; arrivals hold the entire live board."""
+
     _attr_has_entity_name = True
-    entity_description = WmataSensorEntityDescription
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_device_class = SensorDeviceClass.DURATION
+    _unrecorded_attributes = frozenset({"arrivals", "updated_at", "next_arrival"})
 
-    def __init__(self, coordinator: WmataCoordinator, description: WmataSensorEntityDescription) -> None:
-        """Initialize the sensor."""
+    def __init__(self, coordinator) -> None:
         super().__init__(coordinator)
-
-        if coordinator.service_type == "bus":
-            location = coordinator.bus_stop.lower()
-            location_name = coordinator.bus_stop_name
-
-        elif coordinator.service_type == "train":
-            location = coordinator.station.lower()
-            location_name = coordinator.station_name
-
-        # _attr_name: name that appears in Home Assistant UI
-        self._attr_name = f"{location_name} {description.name}"
-
-        # _attr_unique_id: unique ID for the sensor, used to ensure only one instance of the sensor exists, not visible
-        self._attr_unique_id = f"wmata_{location}_{description.key}"
-
-        # entity_id: ID that appears in Home Assistant UI
-        self.entity_id = f"sensor.wmata_{location}_{description.key}"
-
-        self.entity_description = description
-
-        # Log the values for debugging
-        _LOGGER.debug(
-            "Initializing WmataSensor: station=%s, description.key=%s, unique_id=%s",
-            location,
-            description.key,
-            self._attr_unique_id
+        self._attr_unique_id = (
+            f"wmata_{coordinator.service_type}_{coordinator.location.lower()}_board"
         )
-
-    @callback
-    def _handle_coordinator_update(self):
-        """Handle updated data from the coordinator."""
-
-        self._attr_native_value = self.entity_description.value(
-            self.coordinator
+        self.entity_id = f"sensor.wmata_{coordinator.location.lower()}_arrivals"
+        self._attr_name = "Arrivals"
+        self._attr_icon = (
+            "mdi:subway" if coordinator.service_type == "train" else "mdi:bus"
         )
-        self._attr_extra_state_attributes = self.entity_description.attributes(
-            self.coordinator
+        self._attr_device_info = DeviceInfo(
+            identifiers={
+                (DOMAIN, f"{coordinator.service_type}_{coordinator.location}")
+            },
+            name=f"WMATA {coordinator.location_name}",
+            manufacturer="WMATA",
+            entry_type=DeviceEntryType.SERVICE,
         )
-
-        self.async_write_ha_state()
 
     @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self.entity_description.value(self.coordinator) is not None
+    def arrivals(self) -> list[dict]:
+        return self.coordinator.data.arrivals if self.coordinator.data else []
+
+    @property
+    def native_value(self) -> int | None:
+        return next(
+            (a["minutes"] for a in self.arrivals if a["minutes"] is not None), None
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        arrivals = self.arrivals
+        return {
+            "schema_version": 1,
+            "board_type": "station",
+            "station_name": self.coordinator.location_name,
+            "location_id": self.coordinator.location,
+            "service_type": self.coordinator.service_type,
+            "poll_interval": int(self.coordinator.update_interval.total_seconds()),
+            "station_codes": self.coordinator.codes
+            if self.coordinator.service_type == "train"
+            else [],
+            "arrivals": arrivals,
+            "arrival_count": len(arrivals),
+            "served_lines": self.coordinator.served_lines,
+            "next_arrival": arrivals[0] if arrivals else None,
+            "updated_at": self.coordinator.data.updated_at
+            if self.coordinator.data
+            else None,
+        }
+
+
+class WmataJourneySensor(WmataBoardSensor):
+    """A named subset of a station board, updated without extra requests."""
+
+    def __init__(self, coordinator, journey: dict) -> None:
+        super().__init__(coordinator)
+        self.journey = journey
+        self._attr_unique_id = (
+            f"wmata_{coordinator.service_type}_{coordinator.location.lower()}"
+            f"_journey_{journey['id']}"
+        )
+        # HA derives the entity ID from the station and journey name on first use.
+        self.entity_id = None
+        self._attr_name = journey["name"]
+        self._attr_icon = "mdi:map-marker-path"
+
+    @property
+    def arrivals(self) -> list[dict]:
+        return filter_arrivals(super().arrivals, self.journey)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            **super().extra_state_attributes,
+            "board_type": "journey",
+            "journey_name": self.journey["name"],
+            "filters": {
+                k: v for k, v in self.journey.items() if k not in ("id", "name")
+            },
+        }
+
+
+class NetworkMapSensor(CoordinatorEntity, SensorEntity):
+    _attr_has_entity_name = True
+    _attr_name = "Trains"
+    _attr_device_info = DeviceInfo(
+        identifiers={(DOMAIN, "network")},
+        name="WMATA network",
+        manufacturer="WMATA",
+        entry_type=DeviceEntryType.SERVICE,
+    )
+    _attr_unique_id = "wmata_network_trains"
+    _attr_icon = "mdi:train"
+    _unrecorded_attributes = frozenset({"paths", "trains", "updated_at"})
+
+    @property
+    def native_value(self):
+        return len(self.coordinator.data["trains"])
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.data
