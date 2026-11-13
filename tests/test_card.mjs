@@ -469,3 +469,65 @@ test("rail rows display travel directions without platform group numbers", (t) =
   assert.match(details[1], /Direction unavailable/);
   assert.doesNotMatch(card.shadowRoot.textContent, /Platform group/);
 });
+
+test("appearance presets and journey instructions preserve the arrival data", (t) => {
+  const { card, hass, root } = fixture(t, sample, { appearance: "native" });
+  assert.equal(card.dataset.appearance, "native");
+  for (const appearance of [
+    "minimal",
+    "mushroom",
+    "glass",
+    "daylight",
+    "orbit",
+    "bento",
+  ]) {
+    card.setConfig({ entity: "sensor.wmata_g01_arrivals", appearance });
+    assert.equal(card.dataset.appearance, appearance);
+    assert.equal(root.querySelectorAll(".arrival").length, 3);
+  }
+  assert.throws(
+    () =>
+      card.setConfig({
+        entity: "sensor.wmata_g01_arrivals",
+        appearance: "invalid",
+      }),
+    /appearance/,
+  );
+  const state = hass.states["sensor.wmata_g01_arrivals"];
+  card.hass = {
+    ...hass,
+    states: {
+      ...hass.states,
+      "sensor.wmata_g01_arrivals": {
+        ...state,
+        attributes: {
+          ...state.attributes,
+          board_type: "journey",
+          journey_route: { origin_name: "Union Station" },
+          route_description:
+            "Board Red to Gallery Place. Change to Yellow to Huntington.",
+        },
+      },
+    },
+  };
+  assert.match(
+    root.querySelector(".journey-route").textContent,
+    /Change to Yellow/,
+  );
+  assert.match(
+    root.querySelector(".journey-route").textContent,
+    /Transfer waits and travel time are not included/,
+  );
+});
+
+test("map frame appearance is separate from the basemap brightness", async (t) => {
+  const { card } = await mapFixture(t, {
+    appearance: "native",
+    theme_mode: "dark",
+  });
+  assert.equal(card.querySelector("ha-card").dataset.appearance, "native");
+  assert.equal(
+    card.querySelector("ha-card").style.borderRadius,
+    "var(--ha-card-border-radius, 12px)",
+  );
+});

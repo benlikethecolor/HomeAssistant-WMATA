@@ -1,5 +1,7 @@
 """One station board and optional saved journeys, without numbered slots."""
 
+from copy import deepcopy
+
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import UnitOfTime
 from homeassistant.helpers import entity_registry as er
@@ -11,6 +13,7 @@ from homeassistant.util.dt import parse_datetime
 from .const import CONF_JOURNEYS, DOMAIN, LINE_NAME_MAP
 from .coordinator import WmataCoordinator
 from .directions import station_directions
+from .journeys import describe_route
 from .predictions import filter_arrivals
 
 PARALLEL_UPDATES = 0
@@ -113,6 +116,11 @@ class WmataBoardSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
 class WmataJourneySensor(WmataBoardSensor):
     """A named subset of a station board, updated without extra requests."""
 
+    _unrecorded_attributes = WmataBoardSensor._unrecorded_attributes | {
+        "journey_route",
+        "route_description",
+    }
+
     def __init__(self, coordinator, journey: dict) -> None:
         super().__init__(coordinator)
         self.journey = journey
@@ -131,12 +139,34 @@ class WmataJourneySensor(WmataBoardSensor):
 
     @property
     def extra_state_attributes(self) -> dict:
+        route = deepcopy(self.journey.get("route"))
+        if route:
+            lines = sorted(
+                {
+                    arrival["line"]
+                    for arrival in self.arrivals
+                    if arrival.get("line") in LINE_NAME_MAP
+                }
+            )
+            if lines:
+                route["legs"][0]["lines"] = lines
         return {
             **super().extra_state_attributes,
             "board_type": "journey",
             "journey_name": self.journey["name"],
+            **(
+                {
+                    "journey_route": route,
+                    "route_description": describe_route(route),
+                    "eta_type": "boarding",
+                }
+                if self.journey.get("kind") == "station_to_station"
+                else {}
+            ),
             "filters": {
-                k: v for k, v in self.journey.items() if k not in ("id", "name")
+                k: v
+                for k, v in self.journey.items()
+                if k not in ("id", "name", "route")
             },
         }
 

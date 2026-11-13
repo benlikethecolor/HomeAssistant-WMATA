@@ -120,6 +120,45 @@ async def verify(scenario):
                     assert options["type"] == "create_entry"
                     await wait_loaded(rail)
                     assert len(rail.options["journeys"]) == 1
+                    trip = await hass.config_entries.options.async_init(rail.entry_id)
+                    trip = await hass.config_entries.options.async_configure(
+                        trip["flow_id"], {"next_step_id": "add_trip"}
+                    )
+                    trip = await hass.config_entries.options.async_configure(
+                        trip["flow_id"], {"target_station": "C15"}
+                    )
+                    assert trip["step_id"] == "trip_confirm"
+                    assert trip["description_placeholders"]["transfers"] == "1"
+                    await hass.config_entries.options.async_configure(
+                        trip["flow_id"], {}
+                    )
+                    await wait_loaded(rail)
+                    trip_states = [
+                        state
+                        for state in hass.states.async_all("sensor")
+                        if state.attributes.get("eta_type") == "boarding"
+                    ]
+                    assert len(trip_states) == 1
+                    # Two routes tie on transfers/stops; the fixture has a different
+                    # boarding prediction at each legitimate interchange.
+                    interchange = trip_states[0].attributes["journey_route"]["legs"][0][
+                        "to_name"
+                    ]
+                    assert (
+                        trip_states[0].state
+                        == {"Gallery Pl-Chinatown": "4", "L'Enfant Plaza": "7"}[
+                            interchange
+                        ]
+                    )
+                    assert trip_states[0].attributes["arrival_count"] == 1
+                    assert (
+                        trip_states[0].attributes["journey_route"]["destination_name"]
+                        == "Huntington"
+                    )
+                    assert (
+                        "Change to Yellow"
+                        in trip_states[0].attributes["route_description"]
+                    )
                     map_options = await hass.config_entries.options.async_init(
                         network.entry_id
                     )

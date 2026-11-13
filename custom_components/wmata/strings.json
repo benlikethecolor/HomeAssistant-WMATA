@@ -57,9 +57,10 @@
         "title": "Station board and saved journeys",
         "menu_options": {
           "settings": "Polling and arrival settings",
-          "add_journey": "Add a journey",
+          "add_journey": "Custom arrival filter",
           "edit_journey": "Edit a journey",
-          "remove_journey": "Remove a journey"
+          "remove_journey": "Remove a journey",
+          "add_trip": "Station-to-station journey"
         }
       },
       "settings": {
@@ -105,15 +106,37 @@
         "data": {
           "journey_id": "Journey"
         }
+      },
+      "add_trip": {
+        "title": "Where would you like to go?",
+        "description": "From {origin}. Choose the station you want to reach. The suggested route prefers fewer transfers, then fewer stops.",
+        "data": {
+          "target_station": "Destination station",
+          "name": "Journey name (optional)"
+        }
+      },
+      "edit_trip": {
+        "title": "Edit station-to-station journey",
+        "description": "From {origin}. Choose the station you want to reach. The suggested route prefers fewer transfers, then fewer stops.",
+        "data": {
+          "target_station": "Destination station",
+          "name": "Journey name (optional)"
+        }
+      },
+      "trip_confirm": {
+        "title": "Review your journey",
+        "description": "{origin} \u2192 {destination}\n\n{route}\n\nTransfers: {transfers}. The sensor shows minutes until the next train to board at the origin. Travel time and transfer waits are not included."
       }
     },
     "error": {
       "invalid_name": "Enter a journey name.",
-      "duplicate_name": "A journey with this name already exists at this station."
+      "duplicate_name": "A journey with this name already exists at this station.",
+      "no_route": "Choose a different destination station. No route was found."
     },
     "abort": {
       "no_journeys": "No saved journeys exist for this station yet. Choose Add a journey to create one.",
-      "journey_not_found": "This journey no longer exists. Reopen Configure."
+      "journey_not_found": "This journey no longer exists. Reopen Configure.",
+      "rail_only": "Station-to-station journeys are available for rail stations."
     }
   }
 }

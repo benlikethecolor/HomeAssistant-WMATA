@@ -27,6 +27,7 @@ from .const import (
     STATION_CODE_MAP,
     station_codes,
 )
+from .journeys import STATIONS_BY_NAME, describe_route, plan_journey
 
 KEY_SCHEMA = vol.Schema(
     {
@@ -326,7 +327,17 @@ class WmataOptionsFlow(OptionsFlow):
             return await self.async_step_settings(user_input)
         return self.async_show_menu(
             step_id="init",
-            menu_options=["settings", "add_journey", "edit_journey", "remove_journey"],
+            menu_options=[
+                "settings",
+                *(
+                    ["add_trip"]
+                    if self.config_entry.data[CONF_SERVICE_TYPE] == "train"
+                    else []
+                ),
+                "add_journey",
+                "edit_journey",
+                "remove_journey",
+            ],
         )
 
     def _save(self, **updates):
@@ -444,6 +455,100 @@ class WmataOptionsFlow(OptionsFlow):
             )
         return vol.Schema(schema)
 
+    async def async_step_add_trip(self, user_input=None):
+        self._editing_id = None
+        return await self._trip_form("add_trip", user_input)
+
+    async def async_step_edit_trip(self, user_input=None):
+        return await self._trip_form("edit_trip", user_input)
+
+    async def _trip_form(self, step_id, user_input):
+        if self.config_entry.data[CONF_SERVICE_TYPE] != "train":
+            return self.async_abort(reason="rail_only")
+        origin = self.config_entry.data[CONF_ID]
+        origin_name = STATION_CODE_MAP[origin]
+        current = next(
+            (
+                j
+                for j in self._journeys()
+                if j["id"] == getattr(self, "_editing_id", None)
+            ),
+            {},
+        )
+        errors = {}
+        if user_input is not None:
+            route = plan_journey(origin, user_input["target_station"])
+            name = (
+                user_input.get("name", "").strip()
+                or f"To {STATION_CODE_MAP.get(user_input['target_station'], 'destination')}"
+            )
+            if route is None:
+                errors["base"] = "no_route"
+            elif any(
+                j["name"].casefold() == name.casefold() and j["id"] != self._editing_id
+                for j in self._journeys()
+            ):
+                errors["name"] = "duplicate_name"
+            else:
+                self._pending_trip = {
+                    "id": self._editing_id or uuid4().hex,
+                    "name": name,
+                    "kind": "station_to_station",
+                    "target_station": user_input["target_station"],
+                    "route": route,
+                }
+                return await self.async_step_trip_confirm()
+        return self.async_show_form(
+            step_id=step_id,
+            errors=errors,
+            description_placeholders={"origin": origin_name},
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "target_station",
+                        **(
+                            {"default": current["target_station"]}
+                            if current.get("target_station")
+                            else {}
+                        ),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(value=code, label=name)
+                                for name, code in sorted(STATIONS_BY_NAME.items())
+                                if name != origin_name
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional("name", default=current.get("name", "")): vol.All(
+                        str, vol.Length(max=80)
+                    ),
+                }
+            ),
+        )
+
+    async def async_step_trip_confirm(self, user_input=None):
+        trip = self._pending_trip
+        if user_input is not None:
+            journeys = [
+                trip if j["id"] == self._editing_id else j for j in self._journeys()
+            ]
+            if self._editing_id is None:
+                journeys.append(trip)
+            return self._save(**{CONF_JOURNEYS: journeys})
+        route = trip["route"]
+        return self.async_show_form(
+            step_id="trip_confirm",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "origin": route["origin_name"],
+                "destination": route["destination_name"],
+                "route": describe_route(route),
+                "transfers": str(route["transfers"]),
+            },
+        )
+
     async def async_step_add_journey(self, user_input=None):
         self._editing_id = None
         return await self._journey_form("add_journey", user_input)
@@ -498,6 +603,9 @@ class WmataOptionsFlow(OptionsFlow):
                     **{CONF_JOURNEYS: [j for j in journeys if j["id"] != selected]}
                 )
             self._editing_id = selected
+            current = next(j for j in journeys if j["id"] == selected)
+            if current.get("kind") == "station_to_station":
+                return await self.async_step_edit_trip()
             return await self.async_step_journey()
         return self.async_show_form(
             step_id=step_id,

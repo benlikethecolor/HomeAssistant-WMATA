@@ -13,6 +13,7 @@ REQUIRED = {
     "binary_sensor.py",
     "diagnostics.py",
     "directions.py",
+    "journeys.py",
     "websocket.py",
     "geo_shapes.json",
     "route_shapes.json",

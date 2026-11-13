@@ -1,3 +1,16 @@
+const WMATA_APPEARANCES = [
+  { value: "standard", label: "Standard" },
+  { value: "native", label: "Home Assistant" },
+  { value: "minimal", label: "Minimal" },
+  { value: "mushroom", label: "Mushroom-inspired" },
+  { value: "glass", label: "Glass" },
+  { value: "daylight", label: "Daylight" },
+  { value: "orbit", label: "Orbit" },
+  { value: "bento", label: "Bento" },
+];
+const validAppearance = (value) =>
+  WMATA_APPEARANCES.some((option) => option.value === value);
+
 /* WMATA Station Board 4.0.0 — no external libraries or network requests. */
 (() => {
   const COLORS = {
@@ -28,6 +41,14 @@
       }),
     );
   const STYLE = `
+    .journey-route{margin:0 22px 14px;padding:12px;border-radius:12px;background:var(--secondary-background-color,#eff3f5);font-size:13px;line-height:1.5}.journey-route small{display:block;margin-top:4px;color:var(--secondary-text-color,#64717b)}
+    :host([data-appearance=native]){font-family:var(--ha-font-family-body,Roboto,system-ui,sans-serif)}
+    :host([data-appearance=native]) ha-card{border-radius:var(--ha-card-border-radius,12px);box-shadow:var(--ha-card-box-shadow,none);border-width:var(--ha-card-border-width,1px);border-color:var(--ha-card-border-color,var(--divider-color,#e0e0e0));background:var(--ha-card-background,var(--card-background-color,#fff))}
+    :host([data-appearance=native]) .header{padding:16px;gap:8px}:host([data-appearance=native]) .mark{background:none;width:32px;height:32px}:host([data-appearance=native]) .eyebrow{display:none}:host([data-appearance=native]) .title{font-size:20px;font-weight:400;letter-spacing:normal}:host([data-appearance=native]) .number{font-weight:400}:host([data-appearance=native]) .filters,:host([data-appearance=native]) .rows{padding-left:16px;padding-right:16px}
+    :host([data-appearance=minimal]) ha-card{border:0;border-radius:var(--ha-card-border-radius,12px);box-shadow:none}:host([data-appearance=minimal]) .header{padding:16px 16px 12px}:host([data-appearance=minimal]) .mark,:host([data-appearance=minimal]) .eyebrow,:host([data-appearance=minimal]) .columns{display:none}:host([data-appearance=minimal]) .title{font-size:18px;font-weight:500}:host([data-appearance=minimal]) .arrival{padding:10px 0}:host([data-appearance=minimal]) .number{font-size:25px;font-weight:500}
+    :host([data-appearance=mushroom]) ha-card{border-radius:28px;box-shadow:var(--ha-card-box-shadow,none)}:host([data-appearance=mushroom]) .header{padding:16px;gap:12px}:host([data-appearance=mushroom]) .mark{border-radius:50%;width:48px;height:48px;background:var(--secondary-background-color,#f0f2f4)}:host([data-appearance=mushroom]) .title{font-size:19px;font-weight:500}:host([data-appearance=mushroom]) .chip{border-radius:20px}:host([data-appearance=mushroom]) .badge{border-radius:16px}:host([data-appearance=mushroom]) .number{font-weight:500}
+    :host([data-appearance=glass]) ha-card{background:var(--ha-card-background,var(--card-background-color,#fff));background:color-mix(in srgb,var(--ha-card-background,var(--card-background-color,#fff)) 78%,transparent);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid color-mix(in srgb,var(--primary-text-color,#222) 14%,transparent);border-radius:24px;box-shadow:0 8px 32px #0001}
+
     :host{display:block;color:var(--primary-text-color,#202b35);font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif)}
     :host([data-appearance=orbit]),:host([data-appearance=bento]),:host([data-appearance=daylight]){--ha-card-background:#18212c;--secondary-background-color:#253140;--primary-text-color:#f5f4f1;--secondary-text-color:#b1bac5;--divider-color:#394452;--ha-card-border-radius:24px;font-family:Inter,system-ui,sans-serif}
     :host([data-appearance=bento]){--ha-card-background:#191a1c;--secondary-background-color:#28292c;--divider-color:#38393c;font-family:Manrope,system-ui,sans-serif}
@@ -82,6 +103,11 @@
         this._line = "all";
         this._destination = "all";
       }
+      if (
+        config.appearance !== undefined &&
+        !validAppearance(config.appearance)
+      )
+        throw new Error("Choose a supported appearance preset.");
       this.dataset.appearance = config.appearance || "standard";
       this._config = {
         max_rows: 8,
@@ -203,6 +229,19 @@
       );
       header.append(mark, heading, live);
       card.append(header);
+      if (attrs.journey_route && attrs.route_description) {
+        const route = element("div", "journey-route", attrs.route_description);
+        route.append(
+          element(
+            "small",
+            null,
+            "ETA is for boarding at " +
+              attrs.journey_route.origin_name +
+              ". Transfer waits and travel time are not included.",
+          ),
+        );
+        card.append(route);
+      }
       if (offline || !compatible) {
         card.append(
           element(
@@ -434,7 +473,7 @@
             name: "appearance",
             selector: {
               select: {
-                options: ["standard", "daylight", "orbit", "bento"],
+                options: WMATA_APPEARANCES,
                 mode: "dropdown",
               },
             },
@@ -450,6 +489,7 @@
         this._form.computeLabel = ({ name }) =>
           ({
             entity: "Station board or journey",
+            appearance: "Appearance",
             title: "Title (optional)",
             max_rows: "Maximum arrivals",
             show_filters: "Show line and destination filters",
@@ -528,8 +568,11 @@ if (!customElements.get("wmata-train-map")) {
         zoom: 1,
         view: "geographic",
         theme_mode: "auto",
+        appearance: "standard",
         ...c,
       };
+      if (!validAppearance(this.config.appearance))
+        throw new Error("Choose a supported appearance preset.");
       if (!["geographic", "diagram"].includes(this.config.view))
         throw new Error("view must be geographic or diagram");
       if (!["auto", "dark", "light"].includes(this.config.theme_mode))
@@ -548,6 +591,7 @@ if (!customElements.get("wmata-train-map")) {
         this.config.zoom > 4
       )
         throw new Error("zoom must be between 1 and 4");
+      this.dataset.appearance = this.config.appearance;
       this.view = this.config.view;
       this.zoom = this.config.zoom;
       this.last = null;
@@ -605,6 +649,26 @@ if (!customElements.get("wmata-train-map")) {
         this.hass = this._hass;
       }
     }
+    _styleFrame(card) {
+      const preset = this.config.appearance;
+      card.dataset.appearance = preset;
+      if (preset === "native") {
+        card.style.borderRadius = "var(--ha-card-border-radius,12px)";
+        card.style.boxShadow = "var(--ha-card-box-shadow,none)";
+        card.style.fontFamily =
+          "var(--ha-font-family-body,Roboto,system-ui,sans-serif)";
+      } else if (preset === "minimal") {
+        card.style.border = "0";
+        card.style.boxShadow = "none";
+      } else if (preset === "mushroom") card.style.borderRadius = "28px";
+      else if (preset === "glass") {
+        card.style.background =
+          "color-mix(in srgb,var(--card-background-color,#fff) 78%,transparent)";
+        card.style.backdropFilter = "blur(20px)";
+        card.style.borderRadius = "24px";
+      } else if (["daylight", "orbit", "bento"].includes(preset))
+        card.style.borderRadius = "24px";
+    }
     async _renderGeographic(state) {
       if (!this.isConnected) return;
       if (this._map) {
@@ -616,6 +680,7 @@ if (!customElements.get("wmata-train-map")) {
       const generation = this._geoGeneration || 0;
       const card = document.createElement("ha-card");
       card.style.cssText = "display:block;overflow:hidden;position:relative";
+      this._styleFrame(card);
       const body = document.createElement("div");
       body.style.cssText = "padding:0;position:relative";
       const controls = document.createElement("div");
@@ -1011,6 +1076,7 @@ if (!customElements.get("wmata-train-map")) {
       }
       this._disposeGeo();
       const card = document.createElement("ha-card");
+      this._styleFrame(card);
       card.header = "Metrorail train map";
       const body = document.createElement("div");
       body.style.padding = "0 16px 16px";
@@ -1190,8 +1256,11 @@ if (!customElements.get("wmata-map-editor")) {
         zoom: 1,
         view: "geographic",
         theme_mode: "auto",
+        appearance: "standard",
         ...c,
       };
+      if (!validAppearance(this.config.appearance))
+        throw new Error("Choose a supported appearance preset.");
       if (!["geographic", "diagram"].includes(this.config.view))
         throw new Error("view must be geographic or diagram");
       if (!["auto", "dark", "light"].includes(this.config.theme_mode))
@@ -1231,6 +1300,17 @@ if (!customElements.get("wmata-map-editor")) {
         });
         this.append(this.form);
       }
+      this.form.computeLabel = ({ name }) =>
+        ({
+          appearance: "Appearance",
+          view: "Map view",
+          theme_mode: "Map brightness",
+          entity: "Train map",
+          height: "Height",
+          zoom: "Diagram zoom",
+          tile_url: "Custom tile URL",
+          tile_attribution: "Custom attribution",
+        })[name] || name;
       this.form.schema = [
         {
           name: "entity",
@@ -1260,6 +1340,12 @@ if (!customElements.get("wmata-map-editor")) {
               ],
               mode: "dropdown",
             },
+          },
+        },
+        {
+          name: "appearance",
+          selector: {
+            select: { options: WMATA_APPEARANCES, mode: "dropdown" },
           },
         },
         {

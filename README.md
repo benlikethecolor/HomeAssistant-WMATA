@@ -32,7 +32,10 @@ In the card editor, choose the station by name. You don’t need to look up a st
 type: custom:wmata-station-card
 entity: sensor.wmata_metro_center_arrivals
 max_rows: 8
+appearance: native
 ~~~
+
+Choose **Home Assistant** in the appearance picker for the same fonts, colors, and card shape as HA’s built-in cards. **Minimal**, **Mushroom-inspired**, and **Glass** offer other layouts; none need a separate card package. All presets are available in the editor.
 
 Use the filters on the card to choose lines and destinations. To save a filter in YAML:
 
@@ -54,7 +57,7 @@ Destinations are the train's final stop, not an intermediate station you want to
 | `max_rows` | `8` | 1–30 |
 | `show_filters` | `true` | Show line/route and destination filters |
 | `show_updated` | `true` | Show when arrivals were updated |
-| `appearance` | `standard` | `standard`, `daylight`, `orbit`, `bento` |
+| `appearance` | `standard` | `native`, `minimal`, `mushroom`, `glass`, `standard`, `daylight`, `orbit`, `bento` |
 | `lines` | All | Rail codes, e.g. `[BL, SV]` |
 | `routes` | All | Bus route IDs, e.g. `[D34]` |
 | `destinations` | All | Station codes, e.g. `[D13]` |
@@ -84,7 +87,13 @@ Choose the entity by its displayed name in the automation editor, or replace the
 
 Rail stations also offer disabled-by-default arrival sensors for each line and direction. At Metro Center, enable **Orange eastbound arrival**, then use a numeric-state trigger below 6. These report minutes and need no saved journey or template. Optional **Next destination**, **Next line/route**, **Arrival count**, and **Last update** sensors are available too. They all share the board’s polling.
 
-For more specific filters, use **Configure → Add a journey**. Give it a name and choose lines, final destinations, or direction. For example, save “Red to Shady Grove” at Dupont Circle. Its sensor reports minutes until the next matching train. For buses, choose routes and direction; direction numbers vary by route, so check the board’s `direction` and `direction_id` attributes if you’re unsure. Multiple choices in one filter match either choice; separate filters must all match.
+### Station-to-station journeys
+
+Open the **origin station’s Configure → Station-to-station journey**, choose the station you want to reach, and review the route before saving. For example, configure Union Station and choose Huntington: the route changes from Red to Yellow at Gallery Place. The planner prefers fewer transfers, then fewer stops.
+
+Add the saved journey to a station-board card by selecting its name in the card editor. Its sensor reports **minutes until the next train to board at the origin**. Transfer instructions appear on the card; travel time and transfer waits are not included. Only trains whose reported destination reaches the first leg’s stopping point are shown, so a train turning back before your stop is excluded.
+
+Use **Edit a journey** to change its destination or name. For line, terminus, or bus-route filters instead, choose **Custom arrival filter**. Existing saved filters keep working. Bus direction numbers vary by route; check the board’s `direction` and `direction_id` attributes if you’re unsure.
 
 The map's Trains sensor is a train count, so use a station sensor for arrival automations.
 
@@ -106,6 +115,7 @@ height: 850
 | --- | --- | --- |
 | `entity` | Suggested automatically | Network Trains sensor |
 | `view` | `geographic` | `geographic` for OpenStreetMap, or `diagram` for the official map |
+| `appearance` | `standard` | The same frame presets as the station card; map brightness is separate |
 | `theme_mode` | `auto` | `auto`, `dark`, or `light` |
 | `dark_mode` | Unset | Boolean override of `theme_mode` |
 | `height` | `750` | 250–1600 pixels; you can also drag to resize |

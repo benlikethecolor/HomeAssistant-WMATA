@@ -2,6 +2,7 @@
 
 from .const import LINE_NAME_MAP, STATION_CODE_MAP, station_codes
 from .directions import rail_direction
+from .journeys import trip_matches
 
 
 def prediction_minutes(value) -> int | None:
@@ -105,6 +106,8 @@ def normalize_prediction(raw: dict, service: str) -> dict:
 
 def filter_arrivals(arrivals: list[dict], journey: dict) -> list[dict]:
     """All populated filters are ANDed; values within a filter are ORed."""
+    if journey.get("kind") == "station_to_station":
+        return [a for a in arrivals if trip_matches(a, journey["route"])]
     destinations = {
         alias
         for code in journey.get("destinations", [])
