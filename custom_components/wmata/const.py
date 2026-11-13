@@ -136,7 +136,7 @@ def station_codes(code: str) -> list[str]:
 
 
 CONF_JOURNEYS = "journeys"
-CARD_VERSION = "4.9.0"
+CARD_VERSION = "4.10.0"
 
 CONF_DUE_SOON = "due_soon_minutes"
 DEFAULT_DUE_SOON = 5

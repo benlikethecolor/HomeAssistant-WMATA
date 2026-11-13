@@ -10,7 +10,7 @@ body:
     id: integration_version
     attributes:
       label: WMATA integration version
-      placeholder: "4.9.0"
+      placeholder: "4.10.0"
     validations:
       required: true
   - type: input

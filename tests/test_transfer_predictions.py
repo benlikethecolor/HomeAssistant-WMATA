@@ -18,6 +18,9 @@ def fixture(route=None):
     route = route or plan_journey("C04", "B35")
     api = SimpleNamespace(
         _state=object(),
+        rail_times=AsyncMock(
+            return_value={("C04", "C03"): 2, ("C03", "C02"): 1, ("C02", "C01"): 1}
+        ),
         trains=AsyncMock(
             return_value=[
                 {
@@ -118,6 +121,7 @@ class TransferPredictionsTest(unittest.IsolatedAsyncioTestCase):
         api.trains.assert_awaited_once_with(["A01", "C01"])
         response = connection.send_result.call_args_list[0].args[1]
         self.assertEqual(len(response["legs"]), 2)
+        self.assertEqual(response["legs"][0]["ride_minutes"], 4)
         self.assertEqual(response["legs"][0]["arrivals"][0]["minutes"], 4)
         self.assertEqual(
             [a["destination_code"] for a in response["legs"][1]["arrivals"]],
@@ -156,6 +160,20 @@ class TransferPredictionsTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(connection.send_error.call_args.args[1], "invalid_entity")
         api.trains.assert_not_awaited()
+        api.rail_times.assert_not_awaited()
+
+    async def test_travel_time_outage_keeps_live_departures(self):
+        hass, entry, entity, registry, connection, api = fixture()
+        api.rail_times.side_effect = APIConnectionError("offline")
+        with patch(
+            "custom_components.wmata.websocket.er.async_get", return_value=registry
+        ):
+            await inspect.unwrap(journey_arrivals)(
+                hass, connection, {"id": 1, "entity_id": "sensor.trip"}
+            )
+        legs = connection.send_result.call_args.args[1]["legs"]
+        self.assertTrue(all(leg["available"] for leg in legs))
+        self.assertTrue(all(leg["ride_minutes"] is None for leg in legs))
 
     async def test_one_failed_transfer_does_not_hide_other_legs(self):
         route = {

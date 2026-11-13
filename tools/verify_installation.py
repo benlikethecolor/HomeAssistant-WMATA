@@ -46,6 +46,17 @@ async def verify(scenario):
             key = "StationPrediction" if path.startswith("StationPrediction") else path
             if client.headers["api_key"] != "fixture-key":
                 raise AssertionError("Unexpected credential in isolated test")
+            if path == "Rail.svc/json/jSrcStationToDstStationInfo":
+                from custom_components.wmata.directions import ROUTES
+
+                return {
+                    "StationToStationInfos": [
+                        {"SourceStation": a, "DestinationStation": b, "RailTime": 2}
+                        for route in ROUTES.values()
+                        for path in (route, tuple(reversed(route)))
+                        for a, b in zip(path, path[1:], strict=False)
+                    ]
+                }
             if path.startswith("StationPrediction"):
                 codes = set(path.rsplit("/", 1)[-1].split(","))
                 if codes.intersection({"B01", "F01", "D03", "F03"}):
@@ -193,6 +204,7 @@ async def verify(scenario):
                     assert len(legs[1]["arrivals"]) == 1
                     assert legs[1]["arrivals"][0]["minutes"] == 6
                     assert legs[1]["arrivals"][0]["line"] == "YL"
+                    assert all(leg["ride_minutes"] > 0 for leg in legs)
                     map_options = await hass.config_entries.options.async_init(
                         network.entry_id
                     )

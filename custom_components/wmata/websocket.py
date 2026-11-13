@@ -8,6 +8,7 @@ from homeassistant.components import websocket_api
 from homeassistant.helpers import entity_registry as er
 
 from .api import APIAuthError, APIConnectionError
+from .connections import ride_minutes
 from .const import CONF_JOURNEYS, DOMAIN, STATION_CODE_MAP
 from .journeys import trip_matches
 from .station_predictions import async_station_predictions
@@ -152,4 +153,10 @@ async def journey_arrivals(hass, connection, msg):
     legs = await asyncio.gather(
         *(predictions(index, leg) for index, leg in enumerate(route["legs"]))
     )
+    try:
+        times = await coordinator.api.rail_times()
+    except (APIAuthError, APIConnectionError):
+        times = None
+    for result, leg in zip(legs, route["legs"], strict=True):
+        result["ride_minutes"] = ride_minutes(leg, times)
     connection.send_result(msg["id"], {"legs": legs})

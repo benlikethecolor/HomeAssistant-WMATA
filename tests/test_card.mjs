@@ -516,7 +516,7 @@ test("appearance presets and journey instructions preserve the arrival data", (t
   );
   assert.match(
     root.querySelector(".journey-route").textContent,
-    /Transfer waits and travel time are not included/,
+    /Connection estimates appear with each transfer/,
   );
 });
 
@@ -551,7 +551,7 @@ const transferRoute = {
 };
 const transferResponse = () => ({
   legs: [
-    { index: 0, available: true, arrivals: [] },
+    { index: 0, available: true, arrivals: [], ride_minutes: 4 },
     {
       index: 1,
       available: true,
@@ -731,4 +731,155 @@ test("the journey editor exposes transfer visibility and row count without dupli
   );
   assert.equal(form.data.show_transfer_predictions, true);
   assert.equal(form.data.transfer_rows, 3);
+  assert.equal(form.data.transfer_buffer, 3);
+  assert.equal(
+    form.schema.filter((field) => field.name === "transfer_buffer").length,
+    1,
+  );
+});
+
+async function estimatedJourney(t, times, config = {}, transform = () => {}) {
+  const f = fixture(t, sample, config);
+  const stamp = new Date().toISOString();
+  const result = transferResponse();
+  result.legs[1].updated_at = stamp;
+  result.legs[1].arrivals = times.map((minutes) => ({
+    ...result.legs[1].arrivals[0],
+    minutes,
+  }));
+  transform(result);
+  setTransferJourney(f, async () => result);
+  f.card._hass.states["sensor.wmata_g01_arrivals"].attributes.updated_at =
+    stamp;
+  await new Promise((resolve) => setImmediate(resolve));
+  return { ...f, result, stamp };
+}
+
+test("transfer estimates add ride and platform time and include the boundary departure", async (t) => {
+  const f = await estimatedJourney(t, [2, 10, 11, 15], { transfer_rows: 4 });
+  const rows = [...f.root.querySelectorAll(".transfer-arrivals .arrival")];
+  assert.deepEqual(
+    rows.map((row) => row.dataset.connection),
+    ["early", "early", "likely", "likely"],
+  );
+  assert.match(rows[2].textContent, /Suggested connection/);
+  assert.match(rows[3].textContent, /Also likely catchable/);
+  const plan = f.card._connectionPlan();
+  assert.equal(plan.legs[0].reach, Date.parse(f.stamp) + 8 * 60000);
+  assert.equal(plan.legs[0].ready, Date.parse(f.stamp) + 11 * 60000);
+  assert.match(
+    f.root.querySelector(".transfer-station .connection-summary").textContent,
+    /3 min to change/,
+  );
+});
+
+test("row limits keep the suggested connection visible and the buffer is editable", async (t) => {
+  const f = await estimatedJourney(t, [1, 3, 5, 11, 15], { transfer_rows: 2 });
+  let rows = [...f.root.querySelectorAll(".transfer-arrivals .arrival")];
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1].querySelector(".eta").textContent, "11min");
+  assert.match(rows[1].textContent, /Suggested connection/);
+  f.card.setConfig({
+    entity: "sensor.wmata_g01_arrivals",
+    transfer_buffer: 6,
+    transfer_rows: 2,
+  });
+  rows = [...f.root.querySelectorAll(".transfer-arrivals .arrival")];
+  assert.equal(rows[1].querySelector(".eta").textContent, "15min");
+  assert.match(rows[1].textContent, /Suggested connection/);
+  for (const transfer_buffer of [0, -1, 1.5, "3", 31])
+    assert.throws(
+      () =>
+        f.card.setConfig({
+          entity: "sensor.wmata_g01_arrivals",
+          transfer_buffer,
+        }),
+      /transfer_buffer/,
+    );
+});
+
+test("old snapshots and unknown or delayed estimates cannot become likely connections", async (t) => {
+  const f = await estimatedJourney(t, [12, null], {}, (result) => {
+    result.legs[1].arrivals[1].status = "delayed";
+  });
+  assert.deepEqual(
+    [...f.root.querySelectorAll(".transfer-arrivals .arrival")].map(
+      (row) => row.dataset.connection,
+    ),
+    ["likely", "unknown"],
+  );
+  f.result.legs[1].updated_at = new Date(Date.now() - 180000).toISOString();
+  f.card._updateFreshness();
+  assert.equal(f.root.querySelectorAll('[data-connection="likely"]').length, 0);
+  f.result.legs[1].updated_at = f.stamp;
+  f.card._hass.states["sensor.wmata_g01_arrivals"].attributes.updated_at =
+    new Date(Date.now() - 180000).toISOString();
+  f.card._updateFreshness();
+  assert.equal(f.root.querySelectorAll('[data-connection="likely"]').length, 0);
+  assert.match(f.root.textContent, /No fresh origin departure/);
+});
+
+test("missing ride times leave departures readable and later windows are not invented", async (t) => {
+  const f = await estimatedJourney(t, [2, 5]);
+  assert.match(
+    f.root.textContent,
+    /No catchable trains in the current prediction window/,
+  );
+  f.result.legs[0].ride_minutes = null;
+  f.card._renderTransfers();
+  assert.match(f.root.textContent, /Scheduled ride time is unavailable/);
+  assert.equal(f.root.querySelectorAll('[data-connection="likely"]').length, 0);
+  assert.equal(
+    f.root.querySelectorAll(".transfer-arrivals .arrival").length,
+    2,
+  );
+});
+
+test("multiple transfers propagate the chosen departure plus the next ride and buffer", async (t) => {
+  const f = await estimatedJourney(t, [2, 12]);
+  f.card._hass.states["sensor.wmata_g01_arrivals"].attributes.journey_route = {
+    ...transferRoute,
+    legs: [
+      ...transferRoute.legs,
+      {
+        from: "B35",
+        to: "B11",
+        from_name: "NoMa-Gallaudet U",
+        to_name: "Glenmont",
+      },
+    ],
+  };
+  f.result.legs[1].ride_minutes = 6;
+  f.result.legs.push({
+    index: 2,
+    available: true,
+    updated_at: f.stamp,
+    arrivals: [
+      { ...f.result.legs[1].arrivals[0], minutes: 20 },
+      { ...f.result.legs[1].arrivals[0], minutes: 22 },
+    ],
+  });
+  f.card._renderTransfers();
+  const plan = f.card._connectionPlan();
+  assert.equal(plan.legs[1].ready, Date.parse(f.stamp) + 21 * 60000);
+  assert.equal(plan.legs[1].chosen.minutes, 22);
+  f.result.legs[1].arrivals = f.result.legs[1].arrivals.slice(0, 1);
+  f.card._renderTransfers();
+  assert.equal(f.card._connectionPlan().legs[1].ready, undefined);
+  assert.match(
+    f.root.textContent,
+    /No catchable train is predicted for the preceding leg/,
+  );
+});
+
+test("connection estimates account for different snapshot ages and origin filters", async (t) => {
+  const f = await estimatedJourney(t, [11, 12]);
+  f.result.legs[1].updated_at = new Date(
+    Date.parse(f.stamp) - 60000,
+  ).toISOString();
+  f.card._renderTransfers();
+  assert.equal(f.card._connectionPlan().legs[0].chosen.minutes, 12);
+  f.card.setConfig({ entity: "sensor.wmata_g01_arrivals", lines: ["SV"] });
+  assert.equal(f.card._connectionPlan().origin, undefined);
+  assert.equal(f.root.querySelectorAll('[data-connection="likely"]').length, 0);
 });

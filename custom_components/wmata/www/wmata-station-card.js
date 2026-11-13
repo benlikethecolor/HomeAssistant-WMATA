@@ -41,6 +41,7 @@ const validAppearance = (value) =>
       }),
     );
   const STYLE = `
+    .connection-summary{font-size:12px;line-height:1.6;margin:0 0 10px;color:var(--secondary-text-color,#64717b)}.connection-label{font-size:11px;font-weight:600;margin-top:5px}.arrival[data-connection=likely]{background:color-mix(in srgb,var(--success-color,#278057) 12%,transparent);border-radius:8px;padding-left:8px;padding-right:8px}.arrival[data-connection=likely] .connection-label{color:var(--success-color,#278057)}.arrival[data-connection=early] .connection-label{color:var(--secondary-text-color,#64717b)}
     .leg-heading{padding:0 22px 12px;font-size:13px;font-weight:600;line-height:1.5}.journey-transfers{border-top:1px solid var(--divider-color,#e2e7eb);padding:16px 22px}.transfer-note{font-size:12px;line-height:1.5;color:var(--secondary-text-color,#64717b);margin:0 0 14px}.transfer-station{margin-top:16px}.transfer-title{font-size:14px;font-weight:600;line-height:1.5;margin:0 0 8px}.transfer-status,.transfer-updated{font-size:11px;color:var(--secondary-text-color,#64717b);line-height:1.5}.transfer-updated{margin-top:8px}.transfer-updated[data-stale=true]{color:var(--warning-color,#9a660d)}
     .journey-route{margin:0 22px 14px;padding:12px;border-radius:12px;background:var(--secondary-background-color,#eff3f5);font-size:13px;line-height:1.5}.journey-route small{display:block;margin-top:4px;color:var(--secondary-text-color,#64717b)}
     :host([data-appearance=native]){font-family:var(--ha-font-family-body,Roboto,system-ui,sans-serif)}
@@ -112,6 +113,15 @@ const validAppearance = (value) =>
         typeof config.show_transfer_predictions !== "boolean"
       )
         throw new Error("show_transfer_predictions must be true or false");
+      if (
+        config.transfer_buffer !== undefined &&
+        (!Number.isInteger(config.transfer_buffer) ||
+          config.transfer_buffer < 1 ||
+          config.transfer_buffer > 30)
+      )
+        throw new Error(
+          "transfer_buffer must be an integer between 1 and 30 minutes.",
+        );
       if (this._config?.entity !== config.entity) {
         this._stopTransferPolling();
         this._line = "all";
@@ -129,6 +139,7 @@ const validAppearance = (value) =>
         show_updated: true,
         show_transfer_predictions: true,
         transfer_rows: 3,
+        transfer_buffer: 3,
         ...config,
       };
       this._render();
@@ -300,9 +311,21 @@ const validAppearance = (value) =>
         element(
           "p",
           "transfer-note",
-          "Current departures at each transfer station. Connections after your arrival are not guaranteed.",
+          "Connections use live departures and scheduled ride times, with " +
+            this._config.transfer_buffer +
+            " min to change platforms. Estimates are not guaranteed; delays can change them.",
         ),
       );
+      const connections = this._connectionPlan();
+      if (connections.origin) {
+        section.append(
+          element(
+            "p",
+            "connection-summary",
+            `Based on ${COLORS[connections.origin.line]?.[0] || "the next train"} to ${connections.origin.destination || route.legs[0].to_name} at ${this._clock(connections.departure)} from ${route.origin_name}.`,
+          ),
+        );
+      }
       route.legs.slice(1).forEach((leg, index) => {
         const live = this._transferData?.find(
           (value) => value.index === index + 1,
@@ -313,6 +336,17 @@ const validAppearance = (value) =>
             "h3",
             "transfer-title",
             `Leg ${index + 2} · ${leg.from_name} → ${leg.to_name}`,
+          ),
+        );
+        const estimate = connections.legs[index];
+        station.append(
+          element(
+            "p",
+            "connection-summary",
+            estimate?.ready
+              ? `Reach ${leg.from_name} about ${this._clock(estimate.reach)} · ready to board ${this._clock(estimate.ready)} (${this._config.transfer_buffer} min to change).`
+              : "Connection estimate unavailable. " +
+                  (estimate?.reason || "Waiting for live predictions."),
           ),
         );
         if (
@@ -343,10 +377,40 @@ const validAppearance = (value) =>
           const rows = element("div", "transfer-arrivals");
           rows.setAttribute("role", "list");
           rows.setAttribute("aria-label", leg.from_name + " departures");
-          live.arrivals
-            .slice(0, this._config.transfer_rows)
-            .forEach((arrival) => rows.append(this._row(arrival)));
+          const shown = live.arrivals.slice(0, this._config.transfer_rows);
+          // Keep the first likely connection visible even when earlier trains fill the row limit.
+          if (estimate?.chosen && !shown.includes(estimate.chosen))
+            shown[shown.length - 1] = estimate.chosen;
+          shown.forEach((arrival) => {
+            const row = this._row(arrival);
+            const status = estimate?.statuses.get(arrival) || "unknown";
+            row.dataset.connection = status;
+            row
+              .querySelector(".destination")
+              .parentElement.append(
+                element(
+                  "div",
+                  "connection-label",
+                  status === "likely"
+                    ? arrival === estimate.chosen
+                      ? "Suggested connection"
+                      : "Also likely catchable"
+                    : status === "early"
+                      ? "Too early for this connection"
+                      : "Connection unknown",
+                ),
+              );
+            rows.append(row);
+          });
           station.append(rows);
+          if (estimate?.ready && !estimate.chosen && !estimate.stale)
+            station.append(
+              element(
+                "p",
+                "connection-summary",
+                "No catchable trains in the current prediction window. Later departures may appear on refresh.",
+              ),
+            );
         }
         if (live?.updated_at && this._config.show_updated) {
           const updated = element("div", "transfer-updated");
@@ -358,6 +422,94 @@ const validAppearance = (value) =>
       if (previous) previous.replaceWith(section);
       else card.append(section);
       this._updateTransferAges();
+    }
+    _clock(timestamp) {
+      return new Date(timestamp).toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+    _connectionPlan() {
+      const now = Date.now();
+      const state = this._hass?.states?.[this._config?.entity];
+      const route = this._transferRoute();
+      const fresh = (data) => {
+        const time = Date.parse(data?.updated_at);
+        return (
+          Number.isFinite(time) && now - time <= 90000 && time <= now + 30000
+        );
+      };
+      const departure = (arrival, data) => {
+        if (
+          !Number.isFinite(arrival.minutes) ||
+          arrival.minutes < 0 ||
+          !["predicted", "arriving", "boarding"].includes(arrival.status)
+        )
+          return null;
+        return Date.parse(data?.updated_at) + arrival.minutes * 60000;
+      };
+      const origins =
+        state?.state !== "unavailable" && fresh(state?.attributes)
+          ? this._configuredArrivals(state)
+              .filter(
+                (a) =>
+                  (this._line === "all" || routeKey(a) === this._line) &&
+                  (this._destination === "all" ||
+                    destinationKey(a) === this._destination),
+              )
+              .map((arrival) => ({
+                arrival,
+                time: departure(arrival, state.attributes),
+              }))
+              .filter(
+                (value) => value.time !== null && value.time >= now - 30000,
+              )
+              .sort((a, b) => a.time - b.time)
+          : [];
+      const result = {
+        origin: origins[0]?.arrival,
+        departure: origins[0] ? Math.max(now, origins[0].time) : null,
+        legs: [],
+      };
+      let boarded = result.departure;
+      let reason = "No fresh origin departure is available.";
+      for (let i = 1; i < (route?.legs?.length || 0); i++) {
+        const previous = this._transferData?.find((leg) => leg.index === i - 1);
+        const live = this._transferData?.find((leg) => leg.index === i);
+        const duration = previous?.ride_minutes;
+        const estimate = { statuses: new Map(), reason };
+        if (boarded !== null && Number.isFinite(duration) && duration > 0) {
+          estimate.reach = boarded + duration * 60000;
+          estimate.ready =
+            estimate.reach + this._config.transfer_buffer * 60000;
+        } else if (boarded !== null)
+          estimate.reason = "Scheduled ride time is unavailable.";
+        estimate.stale =
+          this._transferError || !live?.available || !fresh(live);
+        if (estimate.ready && !estimate.stale) {
+          const candidates = [];
+          for (const arrival of live.arrivals) {
+            const time = departure(arrival, live);
+            const status =
+              time === null
+                ? "unknown"
+                : time >= estimate.ready && time >= now
+                  ? "likely"
+                  : "early";
+            estimate.statuses.set(arrival, status);
+            if (status === "likely") candidates.push({ arrival, time });
+          }
+          candidates.sort((a, b) => a.time - b.time);
+          estimate.chosen = candidates[0]?.arrival;
+          boarded = candidates[0]?.time ?? null;
+          reason = "No catchable train is predicted for the preceding leg yet.";
+        } else {
+          boarded = null;
+          reason = "The preceding connection has no reliable estimate.";
+        }
+        result.legs.push(estimate);
+      }
+      return result;
     }
     _updateTransferAges() {
       this.shadowRoot.querySelectorAll(".transfer-updated").forEach((node) => {
@@ -435,7 +587,7 @@ const validAppearance = (value) =>
             null,
             "ETA is for boarding at " +
               attrs.journey_route.origin_name +
-              ". Transfer waits and travel time are not included.",
+              ". Connection estimates appear with each transfer.",
           ),
         );
         card.append(route);
@@ -631,7 +783,7 @@ const validAppearance = (value) =>
       return row;
     }
     _updateFreshness() {
-      this._updateTransferAges();
+      this._renderTransfers();
       const state = this._hass?.states?.[this._config?.entity];
       if (!state || state.state === "unavailable") return;
       const when = Date.parse(state.attributes.updated_at);
@@ -664,6 +816,7 @@ const validAppearance = (value) =>
         show_updated: true,
         show_transfer_predictions: true,
         transfer_rows: 3,
+        transfer_buffer: 3,
         ...config,
       };
       this._render();
@@ -706,6 +859,7 @@ const validAppearance = (value) =>
             appearance: "Appearance",
             show_transfer_predictions: "Live transfer predictions",
             transfer_rows: "Trains per transfer",
+            transfer_buffer: "Minutes to change platforms",
             title: "Title (optional)",
             max_rows: "Maximum arrivals",
             show_filters: "Show line and destination filters",
@@ -741,9 +895,11 @@ const validAppearance = (value) =>
           .slice(1)
           .filter(
             (field) =>
-              !["show_transfer_predictions", "transfer_rows"].includes(
-                field.name,
-              ),
+              ![
+                "show_transfer_predictions",
+                "transfer_rows",
+                "transfer_buffer",
+              ].includes(field.name),
           ),
         ...(this._hass.states[this._config.entity]?.attributes?.journey_route
           ?.legs?.length > 1
@@ -752,6 +908,10 @@ const validAppearance = (value) =>
               {
                 name: "transfer_rows",
                 selector: { number: { min: 1, max: 10, mode: "box" } },
+              },
+              {
+                name: "transfer_buffer",
+                selector: { number: { min: 1, max: 30, mode: "box" } },
               },
             ]
           : []),

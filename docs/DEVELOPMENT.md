@@ -28,7 +28,7 @@ CI runs the tests on HA 2024.12.5, 2025.6.3, 2026.1.3, and stable, plus hassfest
 
 ## Releases and dependency updates
 
-After merging to main, update `manifest.json` and `CARD_VERSION` together, then push a matching tag such as `v4.9.0`. **Prepare release** runs the tests and validators, builds a ZIP, and creates a draft release with upgrade notes. Review the draft before publishing it. Tags must point to a commit on main.
+After merging to main, update `manifest.json` and `CARD_VERSION` together, then push a matching tag such as `v4.10.0`. **Prepare release** runs the tests and validators, builds a ZIP, and creates a draft release with upgrade notes. Review the draft before publishing it. Tags must point to a commit on main.
 
 For a build without a release, run the workflow manually with **create_draft** unchecked. To create a draft manually, run it on the existing version tag with **create_draft** checked. The tag, manifest, and card versions must match.
 
@@ -36,7 +36,7 @@ Dependabot checks Actions, npm tools, and the Python linter weekly after this co
 
 ## Journey routing
 
-Station-to-station journeys use the bundled standard routes, prefer fewer transfers and then fewer stops, and filter the origin board to trains that reach the first leg’s destination. Actual diverted trains can match if their reported terminus reaches that stop; hypothetical diverted routes are not suggested. The card updates the boarding-line instructions from the matching arrivals. Transfer waits and final arrival times are not estimated. Journeys share the origin station’s polling. Transfer boards use an authenticated, on-demand `wmata/journey_arrivals` WebSocket command. The server resolves the saved route from the authorized entity, filters each leg by its boarding goal, and shares 30-second prediction caches across cards and map popups using the same key. Recent configured station polls are reused. Transfer predictions stay out of recorder history; only open cards request them.
+Station-to-station journeys use the bundled standard routes, prefer fewer transfers and then fewer stops, and filter the origin board to trains that reach the first leg’s destination. Actual diverted trains can match if their reported terminus reaches that stop; hypothetical diverted routes are not suggested. The card updates the boarding-line instructions from the matching arrivals. The journey sensor remains the origin boarding ETA. Cards estimate transfer arrival and readiness using scheduled adjacent-station `RailTime` values, live departures with their actual snapshot timestamps, and a configurable platform buffer. Each later leg starts from the first catchable departure on the preceding leg. Missing or stale predictions stop the estimate; no departures beyond the prediction window are extrapolated. Journeys share the origin station’s polling. Transfer boards use an authenticated, on-demand `wmata/journey_arrivals` WebSocket command. The server resolves the saved route from the authorized entity, filters each leg by its boarding goal, and shares 30-second prediction caches across cards and map popups using the same key. Recent configured station polls are reused. Transfer predictions stay out of recorder history; only open cards request them. Scheduled travel times use WMATA’s station-to-station endpoint, cached for a day per API subscription with a five-minute failure backoff. Adjacent-station times are summed along the saved route rather than using a potentially different shortest path.
 
 ## Rail directions
 

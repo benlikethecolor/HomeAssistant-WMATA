@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any
@@ -33,6 +34,9 @@ class RequestState:
     blocked_until: float = 0
     stations: list[dict[str, Any]] | None = None
     stations_expiry: float = 0
+    rail_times: dict[tuple[str, str], float] | None = None
+    rail_times_expiry: float = 0
+    rail_times_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class WmataApi:
@@ -149,6 +153,32 @@ class WmataApi:
             ),
             "Trains",
         )
+
+    async def rail_times(self) -> dict[tuple[str, str], float] | None:
+        """Share WMATA's scheduled travel times; retry failures after five minutes."""
+        async with self._state.rail_times_lock:
+            now = asyncio.get_running_loop().time()
+            if now < self._state.rail_times_expiry:
+                return self._state.rail_times
+            self._state.rail_times_expiry = now + 300
+            rows = self._items(
+                await self.get("Rail.svc/json/jSrcStationToDstStationInfo"),
+                "StationToStationInfos",
+            )
+            times = {
+                (row["SourceStation"], row["DestinationStation"]): row["RailTime"]
+                for row in rows
+                if isinstance(row.get("SourceStation"), str)
+                and isinstance(row.get("DestinationStation"), str)
+                and type(row.get("RailTime")) in (int, float)
+                and math.isfinite(row["RailTime"])
+                and 0 < row["RailTime"] <= 240
+            }
+            if not times:
+                raise APIConnectionError("WMATA travel times are unavailable")
+            self._state.rail_times = times
+            self._state.rail_times_expiry = now + 86400
+            return times
 
     async def buses(self, stop: str) -> list[dict[str, Any]]:
         return self._items(
