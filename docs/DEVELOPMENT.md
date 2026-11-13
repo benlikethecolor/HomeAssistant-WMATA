@@ -1,58 +1,43 @@
-# Development and release verification
+# Development
 
-The declared minimum is HA 2026.11.1. CI tests it and the stable image. Node 22+ runs the card tests.
+## Tests and packaging
 
-## Tests
+Run the backend tests in an HA container:
 
-From the repository root:
+~~~sh
+docker run --rm -v "$PWD:/work" -w /work --entrypoint python \
+  ghcr.io/home-assistant/home-assistant:2026.11.1 \
+  -m unittest discover -s tests -v
+~~~
 
-    docker run --rm -v "$PWD:/work" -w /work --entrypoint python       ghcr.io/home-assistant/home-assistant:2026.11.1       -m unittest discover -s tests -v
+The installation tests extract a release ZIP into a temporary HA config and exercise setup, migration, and reload with fixture API responses. Use Docker's default bridge; HA's DNS resolver needs a network interface even with mocked responses. No production config or API key is needed.
 
-    npm ci
-    npm test
+For the card tests and a manual-install ZIP:
 
-Installation tests build a ZIP, extract it into a temporary config directory, and run real HA config/options flows with fixture API responses. Each scenario runs in its own process. Clean setup covers rail, bus, network map and a journey. Upgrade starts with a version-1 entry and numbered entity. Both check registration, frontend assets, unload and reload.
+~~~sh
+npm ci
+npm test
+python3 tools/build_release.py --output /tmp/wmata.zip
+~~~
 
-Use Docker's default private bridge. HA's DNS resolver needs an interface even when API responses are mocked. No host ports, production configuration or real API keys are required.
+CI runs the tests on HA 2026.11.1 and stable, plus hassfest and HACS validation. Before releasing, also try setup and the cards against a live WMATA subscription.
 
-## Packaging and validators
+## Rail directions
 
-    python3 tools/build_release.py --output /tmp/wmata.zip
+`directions.py` resolves the station and destination on the train's route. It uses east/west for Orange and Silver, north/south for Green and Yellow, and changes direction along the Blue and Red corridors:
 
-The ZIP contains only integration files under custom_components/wmata. Required scripts, translations, geometry, map image, Leaflet and its license are checked. HACS installs from the repository. Manual users can extract the archive into HA's configuration directory.
+- Blue uses north/south on its Virginia branch and east/west through downtown. At Rosslyn, trains toward Franconia-Springfield are southbound and trains toward downtown are eastbound.
+- Red uses north/south on the outer legs and east/west through Metro Center, Gallery Place, and Judiciary Square.
 
-Local hassfest:
+These are derived travel labels, not official platform numbers. Prediction `Group` values don't determine direction. Unknown destinations and trains terminating at the current station have no direction label. The tests cover every station/line pairing, transfers, short turns, and either eastern branch for Orange/Blue/Silver service.
 
-    docker run --rm -v "$PWD:/github/workspace" ghcr.io/home-assistant/hassfest
+Raw `group` attributes and existing group-filtered journeys still work. Editing one of those journeys replaces the track filter with the selected direction filter.
 
-CI also runs the official HACS validator with GitHub's supplied token. If no token is available locally, that authenticated check runs when pushed. Python/card tests do not substitute for it.
+## Rebuilding map geometry
 
-## Rebuilding geometry
+[Source URLs](../custom_components/wmata/GEO_SOURCES.md) are kept with the integration. The generators' `--help` output lists their arguments.
 
-Source URLs are in custom_components/wmata/GEO_SOURCES.md. Generator inputs contain public data only.
+- `tools/build_geographic_geometry.py` takes the station catalog array, rail and extension GIS FeatureSets (`outSR=4326`), schematic shapes, and station anchors. It writes `geo_shapes.json` and `www/geo_routes.json` using standard-library Python.
+- `tools/build_schematic_geometry.py` takes the official PDF, station anchors, and a JSON array of `[line_code, ordered_station_codes]` pairs. It needs PyMuPDF, NumPy, Pillow, SciPy, and scikit-image. The PDF hash is pinned because artwork changes can invalidate the drawing IDs.
 
-Geographic generation uses standard-library Python:
-
-    python3 tools/build_geographic_geometry.py       --stations /tmp/stations.json       --rail /tmp/rail.json       --extension /tmp/extension.json       --schematic-shapes custom_components/wmata/route_shapes.json       --anchors custom_components/wmata/schematic.py       --output /tmp/generated-wmata
-
-The station file is the station catalog's array of objects. Rail and extension files are ArcGIS JSON FeatureSets with outSR=4326, all fields and geometries.
-
-Schematic generation requires developer-only PyMuPDF, NumPy, Pillow, SciPy and scikit-image:
-
-    python3 tools/build_schematic_geometry.py       --pdf /tmp/system-map-rail.pdf       --anchors custom_components/wmata/schematic.py       --routes /tmp/route-stations.json       --output /tmp/generated-wmata/route_shapes.json
-
-The route-stations file is an array of pairs containing LineCode and its ordered station codes. The PDF's SHA-256 is verified because drawing IDs change between artwork revisions. For revised artwork, inspect drawing IDs and station anchors before updating the expected hash.
-
-Compare generated JSON with bundled assets, inspect coverage and bends, and copy reviewed outputs into the integration. The current three assets reproduce exactly from their source data.
-
-## Release checklist
-
-- Run Python/card tests, including packaged clean installation and upgrade.
-- Run hassfest and authenticated HACS validation.
-- Check setup with a live subscription covering the required endpoints.
-- Check boards, map, popups, themes and narrow layouts in a browser.
-- Review migration notes and version.
-- Include media/vendor attribution.
-- Attach the validated ZIP if providing a manual-install release archive.
-
-Fixture scenarios make setup tests deterministic. Check a live subscription before publishing because endpoint permissions and service availability can change.
+Generate into a temporary directory, compare with the bundled JSON, and inspect the map before replacing assets. Keep data and vendor attribution with the integration.

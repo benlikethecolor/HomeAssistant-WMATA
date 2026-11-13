@@ -2,7 +2,7 @@
 
 Group is intentionally unused: it describes a prediction track, not travel
 direction. Directions describe travel toward the next station, not the bearing
-of the final terminus. Source and conventions: docs/RAIL_DIRECTIONS.md.
+of the final terminus. Source and conventions: docs/DEVELOPMENT.md#rail-directions.
 """
 
 import itertools
