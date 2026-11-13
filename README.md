@@ -57,6 +57,8 @@ Destinations are the train's final stop, not an intermediate station you want to
 | `max_rows` | `8` | 1–30 |
 | `show_filters` | `true` | Show line/route and destination filters |
 | `show_updated` | `true` | Show when arrivals were updated |
+| `show_transfer_predictions` | `true` | Show live boards for a journey’s transfer stations |
+| `transfer_rows` | `3` | Trains shown per transfer, 1–10 |
 | `appearance` | `standard` | `native`, `minimal`, `mushroom`, `glass`, `standard`, `daylight`, `orbit`, `bento` |
 | `lines` | All | Rail codes, e.g. `[BL, SV]` |
 | `routes` | All | Bus route IDs, e.g. `[D34]` |
@@ -91,7 +93,7 @@ Rail stations also offer disabled-by-default arrival sensors for each line and d
 
 Open the **origin station’s Configure → Station-to-station journey**, choose the station you want to reach, and review the route before saving. For example, configure Union Station and choose Huntington: the route changes from Red to Yellow at Gallery Place. The planner prefers fewer transfers, then fewer stops.
 
-Add the saved journey to a station-board card by selecting its name in the card editor. Its sensor reports **minutes until the next train to board at the origin**. Transfer instructions appear on the card; travel time and transfer waits are not included. Only trains whose reported destination reaches the first leg’s stopping point are shown, so a train turning back before your stop is excluded.
+Add the saved journey to a station-board card by selecting its name in the card editor. Its sensor reports **minutes until the next train to board at the origin**. Transfer instructions and live predictions at each transfer station appear on the card. Transfer boards refresh every 30 seconds while the card is open and filter trains to those that reach the next leg’s destination. They show current predictions, so a listed train may leave before you reach the transfer station. Travel time and transfer waits are not included. Only trains whose reported destination reaches the first leg’s stopping point are shown, so a train turning back before your stop is excluded.
 
 Use **Edit a journey** to change its destination or name. For line, terminus, or bus-route filters instead, choose **Custom arrival filter**. Existing saved filters keep working. Bus direction numbers vary by route; check the board’s `direction` and `direction_id` attributes if you’re unsure.
 

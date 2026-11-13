@@ -41,6 +41,7 @@ const validAppearance = (value) =>
       }),
     );
   const STYLE = `
+    .leg-heading{padding:0 22px 12px;font-size:13px;font-weight:600;line-height:1.5}.journey-transfers{border-top:1px solid var(--divider-color,#e2e7eb);padding:16px 22px}.transfer-note{font-size:12px;line-height:1.5;color:var(--secondary-text-color,#64717b);margin:0 0 14px}.transfer-station{margin-top:16px}.transfer-title{font-size:14px;font-weight:600;line-height:1.5;margin:0 0 8px}.transfer-status,.transfer-updated{font-size:11px;color:var(--secondary-text-color,#64717b);line-height:1.5}.transfer-updated{margin-top:8px}.transfer-updated[data-stale=true]{color:var(--warning-color,#9a660d)}
     .journey-route{margin:0 22px 14px;padding:12px;border-radius:12px;background:var(--secondary-background-color,#eff3f5);font-size:13px;line-height:1.5}.journey-route small{display:block;margin-top:4px;color:var(--secondary-text-color,#64717b)}
     :host([data-appearance=native]){font-family:var(--ha-font-family-body,Roboto,system-ui,sans-serif)}
     :host([data-appearance=native]) ha-card{border-radius:var(--ha-card-border-radius,12px);box-shadow:var(--ha-card-box-shadow,none);border-width:var(--ha-card-border-width,1px);border-color:var(--ha-card-border-color,var(--divider-color,#e0e0e0));background:var(--ha-card-background,var(--card-background-color,#fff))}
@@ -99,7 +100,20 @@ const validAppearance = (value) =>
       for (const key of ["lines", "routes", "destinations"])
         if (config[key] !== undefined && !isList(config[key]))
           throw new Error(`${key} must be a list of strings.`);
+      if (
+        config.transfer_rows !== undefined &&
+        (!Number.isInteger(config.transfer_rows) ||
+          config.transfer_rows < 1 ||
+          config.transfer_rows > 10)
+      )
+        throw new Error("transfer_rows must be an integer between 1 and 10.");
+      if (
+        config.show_transfer_predictions !== undefined &&
+        typeof config.show_transfer_predictions !== "boolean"
+      )
+        throw new Error("show_transfer_predictions must be true or false");
       if (this._config?.entity !== config.entity) {
+        this._stopTransferPolling();
         this._line = "all";
         this._destination = "all";
       }
@@ -113,6 +127,8 @@ const validAppearance = (value) =>
         max_rows: 8,
         show_filters: true,
         show_updated: true,
+        show_transfer_predictions: true,
+        transfer_rows: 3,
         ...config,
       };
       this._render();
@@ -137,9 +153,17 @@ const validAppearance = (value) =>
     disconnectedCallback() {
       clearInterval(this._timer);
       this._timer = null;
+      this._stopTransferPolling();
     }
     getCardSize() {
-      return 2 + (this._config?.max_rows || 8);
+      const transfers = this._config?.show_transfer_predictions
+        ? Math.max(0, (this._transferRoute()?.legs?.length || 1) - 1)
+        : 0;
+      return (
+        2 +
+        (this._config?.max_rows || 8) +
+        transfers * (2 + (this._config?.transfer_rows || 3))
+      );
     }
     getGridOptions() {
       return { columns: 12, min_columns: 6 };
@@ -180,7 +204,181 @@ const validAppearance = (value) =>
       node.style.setProperty("--line-text", colors[2]);
       return node;
     }
+    _transferRoute() {
+      return this._hass?.states?.[this._config?.entity]?.attributes
+        ?.journey_route;
+    }
+    _stopTransferPolling() {
+      clearInterval(this._transferTimer);
+      this._transferTimer = null;
+      this._transferGeneration = (this._transferGeneration || 0) + 1;
+      this._transferKey = null;
+      this._transferPending = false;
+      this._transferData = null;
+      this._transferError = false;
+    }
+    _syncTransferPolling() {
+      const route = this._transferRoute();
+      if (
+        !this.isConnected ||
+        !this._config?.show_transfer_predictions ||
+        !(route?.legs?.length > 1) ||
+        typeof this._hass?.callWS !== "function"
+      ) {
+        this._stopTransferPolling();
+        return;
+      }
+      const key = JSON.stringify([
+        this._config.entity,
+        route.legs.map((leg) => [leg.from, leg.to]),
+      ]);
+      if (key !== this._transferKey) {
+        this._stopTransferPolling();
+        this._transferKey = key;
+        this._renderTransfers();
+        this._fetchTransfers();
+      }
+      if (!this._transferTimer)
+        this._transferTimer = setInterval(() => this._fetchTransfers(), 30000);
+    }
+    async _fetchTransfers() {
+      if (
+        this._transferPending ||
+        !this.isConnected ||
+        !this._transferKey ||
+        document.visibilityState === "hidden"
+      )
+        return;
+      const generation = this._transferGeneration;
+      const key = this._transferKey;
+      this._transferPending = true;
+      try {
+        const result = await this._hass.callWS({
+          type: "wmata/journey_arrivals",
+          entity_id: this._config.entity,
+        });
+        if (
+          generation !== this._transferGeneration ||
+          key !== this._transferKey ||
+          !this.isConnected
+        )
+          return;
+        if (!Array.isArray(result.legs))
+          throw new Error("Missing journey predictions");
+        this._transferData = result.legs;
+        this._transferError = false;
+      } catch {
+        if (
+          generation !== this._transferGeneration ||
+          key !== this._transferKey ||
+          !this.isConnected
+        )
+          return;
+        this._transferError = true;
+      } finally {
+        if (generation === this._transferGeneration && this.isConnected) {
+          this._transferPending = false;
+          this._renderTransfers();
+        }
+      }
+    }
+    _renderTransfers() {
+      const previous = this.shadowRoot.querySelector(".journey-transfers");
+      const route = this._transferRoute();
+      if (
+        !this._config?.show_transfer_predictions ||
+        !(route?.legs?.length > 1)
+      ) {
+        previous?.remove();
+        return;
+      }
+      const card = this.shadowRoot.querySelector("ha-card");
+      if (!card) return;
+      const section = element("section", "journey-transfers");
+      section.setAttribute("aria-label", "Live transfer predictions");
+      section.append(
+        element(
+          "p",
+          "transfer-note",
+          "Current departures at each transfer station. Connections after your arrival are not guaranteed.",
+        ),
+      );
+      route.legs.slice(1).forEach((leg, index) => {
+        const live = this._transferData?.find(
+          (value) => value.index === index + 1,
+        );
+        const station = element("section", "transfer-station");
+        station.append(
+          element(
+            "h3",
+            "transfer-title",
+            `Leg ${index + 2} · ${leg.from_name} → ${leg.to_name}`,
+          ),
+        );
+        if (
+          this._transferError ||
+          (live && !live.available) ||
+          typeof this._hass?.callWS !== "function"
+        ) {
+          station.append(
+            element(
+              "div",
+              "transfer-status",
+              "Predictions temporarily unavailable. Retrying shortly.",
+            ),
+          );
+        } else if (!live)
+          station.append(
+            element("div", "transfer-status", "Loading current predictions…"),
+          );
+        else if (!live.arrivals.length)
+          station.append(
+            element(
+              "div",
+              "transfer-status",
+              "No matching trains are currently predicted.",
+            ),
+          );
+        else {
+          const rows = element("div", "transfer-arrivals");
+          rows.setAttribute("role", "list");
+          rows.setAttribute("aria-label", leg.from_name + " departures");
+          live.arrivals
+            .slice(0, this._config.transfer_rows)
+            .forEach((arrival) => rows.append(this._row(arrival)));
+          station.append(rows);
+        }
+        if (live?.updated_at && this._config.show_updated) {
+          const updated = element("div", "transfer-updated");
+          updated.dataset.updatedAt = live.updated_at;
+          station.append(updated);
+        }
+        section.append(station);
+      });
+      if (previous) previous.replaceWith(section);
+      else card.append(section);
+      this._updateTransferAges();
+    }
+    _updateTransferAges() {
+      this.shadowRoot.querySelectorAll(".transfer-updated").forEach((node) => {
+        const timestamp = Date.parse(node.dataset.updatedAt);
+        const age = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+        const stale = !Number.isFinite(timestamp) || age > 90;
+        node.dataset.stale = String(stale);
+        node.textContent = Number.isFinite(timestamp)
+          ? `${stale ? "Stale · " : ""}Updated ${age < 10 ? "just now" : age < 60 ? age + "s ago" : Math.floor(age / 60) + "m ago"}`
+          : "Update time unavailable";
+        node.title = Number.isFinite(timestamp)
+          ? new Date(timestamp).toLocaleString()
+          : "";
+      });
+    }
     _render() {
+      this._renderBoard();
+      this._renderTransfers();
+      this._syncTransferPolling();
+    }
+    _renderBoard() {
       if (!this._config) return;
       const state = this._hass?.states?.[this._config.entity];
       const attrs = state?.attributes || {};
@@ -241,6 +439,19 @@ const validAppearance = (value) =>
           ),
         );
         card.append(route);
+      }
+      if (
+        attrs.journey_route?.legs?.length > 1 &&
+        this._config.show_transfer_predictions
+      ) {
+        const leg = attrs.journey_route.legs[0];
+        card.append(
+          element(
+            "div",
+            "leg-heading",
+            `Leg 1 · ${attrs.journey_route.origin_name} → ${leg.to_name}`,
+          ),
+        );
       }
       if (offline || !compatible) {
         card.append(
@@ -420,6 +631,7 @@ const validAppearance = (value) =>
       return row;
     }
     _updateFreshness() {
+      this._updateTransferAges();
       const state = this._hass?.states?.[this._config?.entity];
       if (!state || state.state === "unavailable") return;
       const when = Date.parse(state.attributes.updated_at);
@@ -450,6 +662,8 @@ const validAppearance = (value) =>
         max_rows: 8,
         show_filters: true,
         show_updated: true,
+        show_transfer_predictions: true,
+        transfer_rows: 3,
         ...config,
       };
       this._render();
@@ -490,6 +704,8 @@ const validAppearance = (value) =>
           ({
             entity: "Station board or journey",
             appearance: "Appearance",
+            show_transfer_predictions: "Live transfer predictions",
+            transfer_rows: "Trains per transfer",
             title: "Title (optional)",
             max_rows: "Maximum arrivals",
             show_filters: "Show line and destination filters",
@@ -521,7 +737,24 @@ const validAppearance = (value) =>
           required: true,
           selector: { select: { options: choices, mode: "dropdown" } },
         },
-        ...this._form.schema.slice(1),
+        ...this._form.schema
+          .slice(1)
+          .filter(
+            (field) =>
+              !["show_transfer_predictions", "transfer_rows"].includes(
+                field.name,
+              ),
+          ),
+        ...(this._hass.states[this._config.entity]?.attributes?.journey_route
+          ?.legs?.length > 1
+          ? [
+              { name: "show_transfer_predictions", selector: { boolean: {} } },
+              {
+                name: "transfer_rows",
+                selector: { number: { min: 1, max: 10, mode: "box" } },
+              },
+            ]
+          : []),
       ];
       this._form.hass = this._hass;
       this._form.data = this._config;
@@ -1017,7 +1250,9 @@ if (!customElements.get("wmata-train-map")) {
           }
           const updated = document.createElement("p");
           updated.style.fontSize = "12px";
-          updated.textContent = "Updated " + new Date().toLocaleTimeString();
+          updated.textContent =
+            "Updated " +
+            new Date(result.updated_at || Date.now()).toLocaleTimeString();
           content.append(updated);
         } catch (error) {
           if (content.isConnected)

@@ -7,9 +7,9 @@ import logging
 import sys
 import tempfile
 import zipfile
-from inspect import signature
+from inspect import signature, unwrap
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from build_release import build
 
@@ -46,6 +46,26 @@ async def verify(scenario):
             key = "StationPrediction" if path.startswith("StationPrediction") else path
             if client.headers["api_key"] != "fixture-key":
                 raise AssertionError("Unexpected credential in isolated test")
+            if path.startswith("StationPrediction"):
+                codes = set(path.rsplit("/", 1)[-1].split(","))
+                if codes.intersection({"B01", "F01", "D03", "F03"}):
+                    location = "F01" if codes.intersection({"B01", "F01"}) else "F03"
+                    return {
+                        "Trains": [
+                            {
+                                "Line": "YL",
+                                "LocationCode": location,
+                                "DestinationCode": "C15",
+                                "Min": "6",
+                            },
+                            {
+                                "Line": "GR",
+                                "LocationCode": location,
+                                "DestinationCode": "F11",
+                                "Min": "3",
+                            },
+                        ]
+                    }
             assert key in fixture, key
             return fixture[key]
 
@@ -159,6 +179,20 @@ async def verify(scenario):
                         "Change to Yellow"
                         in trip_states[0].attributes["route_description"]
                     )
+                    from custom_components.wmata.websocket import journey_arrivals
+
+                    connection = MagicMock()
+                    connection.user.permissions.check_entity.return_value = True
+                    await unwrap(journey_arrivals)(
+                        hass,
+                        connection,
+                        {"id": 99, "entity_id": trip_states[0].entity_id},
+                    )
+                    legs = connection.send_result.call_args.args[1]["legs"]
+                    assert len(legs) == 2 and all(leg["available"] for leg in legs)
+                    assert len(legs[1]["arrivals"]) == 1
+                    assert legs[1]["arrivals"][0]["minutes"] == 6
+                    assert legs[1]["arrivals"][0]["line"] == "YL"
                     map_options = await hass.config_entries.options.async_init(
                         network.entry_id
                     )

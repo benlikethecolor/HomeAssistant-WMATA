@@ -531,3 +531,204 @@ test("map frame appearance is separate from the basemap brightness", async (t) =
     "var(--ha-card-border-radius, 12px)",
   );
 });
+
+const transferRoute = {
+  origin_name: "Foggy Bottom-GWU",
+  legs: [
+    {
+      from: "C04",
+      to: "A01",
+      from_name: "Foggy Bottom-GWU",
+      to_name: "Metro Center",
+    },
+    {
+      from: "A01",
+      to: "B35",
+      from_name: "Metro Center",
+      to_name: "NoMa-Gallaudet U",
+    },
+  ],
+};
+const transferResponse = () => ({
+  legs: [
+    { index: 0, available: true, arrivals: [] },
+    {
+      index: 1,
+      available: true,
+      updated_at: new Date().toISOString(),
+      arrivals: [
+        {
+          line: "RD",
+          destination: "Glenmont",
+          direction: "Eastbound",
+          minutes: 2,
+          status: "predicted",
+        },
+        {
+          line: "RD",
+          destination: "Silver Spring",
+          direction: "Eastbound",
+          minutes: 9,
+          status: "predicted",
+        },
+      ],
+    },
+  ],
+});
+function setTransferJourney(f, callWS) {
+  const original = f.hass.states["sensor.wmata_g01_arrivals"];
+  f.card.hass = {
+    ...f.hass,
+    callWS,
+    states: {
+      ...f.hass.states,
+      "sensor.wmata_g01_arrivals": {
+        ...original,
+        attributes: {
+          ...original.attributes,
+          board_type: "journey",
+          journey_route: transferRoute,
+          route_description:
+            "Board Orange to Metro Center. Change to Red to NoMa-Gallaudet U.",
+          arrivals: [
+            {
+              line: "OR",
+              destination: "New Carrollton",
+              minutes: 4,
+              status: "predicted",
+            },
+          ],
+        },
+      },
+    },
+  };
+}
+
+test("journey card renders origin and live transfer rows with independent timestamps", async (t) => {
+  const f = fixture(t);
+  let calls = 0;
+  setTransferJourney(f, async (msg) => {
+    calls++;
+    assert.equal(msg.type, "wmata/journey_arrivals");
+    return transferResponse();
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.root.querySelectorAll(".rows .arrival").length, 1);
+  assert.equal(
+    f.root.querySelectorAll(".journey-transfers .arrival").length,
+    2,
+  );
+  assert.match(
+    f.root.querySelector(".transfer-title").textContent,
+    /Metro Center → NoMa/,
+  );
+  assert.match(
+    f.root.querySelector(".transfer-updated").textContent,
+    /Updated/,
+  );
+  assert.match(
+    f.root.querySelector(".transfer-note").textContent,
+    /not guaranteed/,
+  );
+  f.card.setConfig({ entity: "sensor.wmata_g01_arrivals", transfer_rows: 1 });
+  assert.equal(
+    f.root.querySelectorAll(".journey-transfers .arrival").length,
+    1,
+  );
+  assert.equal(calls, 1);
+  assert.throws(
+    () =>
+      f.card.setConfig({
+        entity: "sensor.wmata_g01_arrivals",
+        transfer_rows: 0,
+      }),
+    /transfer_rows/,
+  );
+});
+
+test("transfer failures leave the origin usable and do not expose error text", async (t) => {
+  const f = fixture(t);
+  setTransferJourney(f, async () => {
+    throw new Error("private-response-detail");
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.root.querySelectorAll(".rows .arrival").length, 1);
+  assert.match(
+    f.root.querySelector(".transfer-status").textContent,
+    /temporarily unavailable/,
+  );
+  assert.doesNotMatch(f.root.textContent, /private-response-detail/);
+});
+
+test("disabling or removing a journey card cancels transfer polling and ignores late responses", async (t) => {
+  const f = fixture(t);
+  let resolveRequest;
+  setTransferJourney(
+    f,
+    () =>
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      }),
+  );
+  assert.ok(f.card._transferTimer);
+  f.card.setConfig({
+    entity: "sensor.wmata_g01_arrivals",
+    show_transfer_predictions: false,
+  });
+  assert.equal(f.card._transferTimer, null);
+  assert.equal(f.root.querySelector(".journey-transfers"), null);
+  resolveRequest(transferResponse());
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.card._transferData, null);
+  f.card.setConfig({
+    entity: "sensor.wmata_g01_arrivals",
+    show_transfer_predictions: true,
+  });
+  assert.ok(f.card._transferTimer);
+  f.card.remove();
+  assert.equal(f.card._transferTimer, null);
+  resolveRequest(transferResponse());
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.card._transferData, null);
+});
+
+test("stale transfer snapshots are labeled and hidden pages do not poll", async (t) => {
+  const f = fixture(t);
+  let calls = 0;
+  setTransferJourney(f, async () => {
+    calls++;
+    const result = transferResponse();
+    result.legs[1].updated_at = new Date(Date.now() - 180000).toISOString();
+    return result;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.root.querySelector(".transfer-updated").dataset.stale, "true");
+  Object.defineProperty(f.window.document, "visibilityState", {
+    configurable: true,
+    value: "hidden",
+  });
+  await f.card._fetchTransfers();
+  assert.equal(calls, 1);
+});
+
+test("the journey editor exposes transfer visibility and row count without duplicate fields", async (t) => {
+  const f = fixture(t);
+  setTransferJourney(f, async () => transferResponse());
+  await new Promise((resolve) => setImmediate(resolve));
+  const editor = f.window.document.createElement("wmata-station-card-editor");
+  editor.setConfig({ entity: "sensor.wmata_g01_arrivals" });
+  editor.hass = f.card._hass;
+  editor.hass = f.card._hass;
+  const form = editor.querySelector("ha-form");
+  assert.equal(
+    form.schema.filter((field) => field.name === "show_transfer_predictions")
+      .length,
+    1,
+  );
+  assert.equal(
+    form.schema.filter((field) => field.name === "transfer_rows").length,
+    1,
+  );
+  assert.equal(form.data.show_transfer_predictions, true);
+  assert.equal(form.data.transfer_rows, 3);
+});
