@@ -254,3 +254,13 @@ def rail_direction(station, line, destination_code, destination):
                 visited.add(neighbor)
                 queue.append((neighbor, first or neighbor))
     return None, None
+
+
+def station_directions(line, codes):
+    """List the travel directions that leave this station on a given line."""
+    if line not in ROUTES:
+        return []
+    _, directions = _graph(line)
+    return sorted(
+        {direction for (origin, _), direction in directions.items() if origin in codes}
+    )

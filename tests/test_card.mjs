@@ -389,7 +389,7 @@ test("train popups expand line names and closing a station popup stops its polli
     ...hass,
     callWS: async (msg) => {
       calls++;
-      assert.equal(msg.station_code, "K01");
+      assert.equal(msg.station_code, "C01");
       return {
         arrivals: [
           {
@@ -403,7 +403,7 @@ test("train popups expand line names and closing a station popup stops its polli
       };
     },
   };
-  card._stationPopup({ code: "K01", name: "Court House" });
+  card._stationPopup({ code: "C01", name: "Metro Center" });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(calls, 1);
   assert.match(
@@ -414,7 +414,7 @@ test("train popups expand line names and closing a station popup stops its polli
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(card._stationTimer, null);
   assert.equal(card.querySelector("dialog"), null);
-  card._stationPopup({ code: "K01", name: "Court House" });
+  card._stationPopup({ code: "C01", name: "Metro Center" });
   card.remove();
   assert.equal(card._stationTimer, null);
 });

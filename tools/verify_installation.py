@@ -7,6 +7,7 @@ import logging
 import sys
 import tempfile
 import zipfile
+from inspect import signature
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -78,7 +79,14 @@ async def verify(scenario):
                     assert flow["step_id"] == "user"
                     flow = await hass.config_entries.flow.async_configure(
                         flow["flow_id"],
-                        {"api_key": "fixture-key", "service_type": service},
+                        (
+                            {
+                                "credential_source": rail.entry_id,
+                                "service_type": service,
+                            }
+                            if hass.config_entries.async_entries("wmata")
+                            else {"api_key": "fixture-key", "service_type": service}
+                        ),
                     )
                     if service != "map":
                         assert flow["step_id"] == "location"
@@ -91,7 +99,7 @@ async def verify(scenario):
                     return entry
 
                 if scenario == "clean":
-                    rail = await add("train", "a01")
+                    rail = await add("train", "A01")
                     await add("bus", "1001051")
                     network = await add("map")
                     options = await hass.config_entries.options.async_init(
@@ -147,7 +155,11 @@ async def verify(scenario):
                         source="user",
                         unique_id="A01",
                         discovery_keys={},
-                        subentries_data=[],
+                        **(
+                            {"subentries_data": []}
+                            if "subentries_data" in signature(ConfigEntry).parameters
+                            else {}
+                        ),
                     )
                     with patch.object(
                         hass.config_entries,
@@ -163,8 +175,16 @@ async def verify(scenario):
                         config_entry=rail,
                         suggested_object_id="old_metro_train",
                     )
+                    retained_board = registry.async_get_or_create(
+                        "sensor",
+                        "wmata",
+                        "wmata_train_a01_board",
+                        config_entry=rail,
+                        suggested_object_id="wmata_a01_arrivals",
+                    )
                     assert await hass.config_entries.async_setup(rail.entry_id)
                     await wait_loaded(rail)
+                    assert hass.states.get(retained_board.entity_id) is not None
                     assert rail.version == 2
                     assert rail.data["api_key"] == "fixture-key"
                     assert rail.options["scan_interval"] == 60
@@ -172,13 +192,34 @@ async def verify(scenario):
                     assert registry.async_get(legacy.entity_id) is None
 
                 registry = entity_registry.async_get(hass)
-                assert hass.states.get("sensor.wmata_a01_arrivals").state == "4"
-                assert (
-                    hass.states.get("sensor.wmata_a01_arrivals").attributes[
-                        "arrival_count"
-                    ]
-                    == 2
+                board_id = (
+                    "sensor.wmata_metro_center_arrivals"
+                    if scenario == "clean"
+                    else retained_board.entity_id
                 )
+                assert hass.states.get(board_id).state == "4"
+                assert hass.states.get(board_id).attributes["arrival_count"] == 2
+                if scenario == "clean":
+                    entities = entity_registry.async_entries_for_config_entry(
+                        registry, rail.entry_id
+                    )
+                    eastbound = next(
+                        e
+                        for e in entities
+                        if e.unique_id.endswith("journey_line_OR_eastbound")
+                    )
+                    due = next(
+                        e for e in entities if e.unique_id.endswith("board_due_soon")
+                    )
+                    assert eastbound.disabled_by is not None
+                    assert due.disabled_by is not None
+                    assert hass.states.get(eastbound.entity_id) is None
+                    registry.async_update_entity(eastbound.entity_id, disabled_by=None)
+                    registry.async_update_entity(due.entity_id, disabled_by=None)
+                    await hass.config_entries.async_reload(rail.entry_id)
+                    await wait_loaded(rail)
+                    assert hass.states.get(eastbound.entity_id).state == "7"
+                    assert hass.states.get(due.entity_id).state == "on"
                 devices = device_registry.async_get(hass)
                 assert any(
                     device.manufacturer == "WMATA"

@@ -2,6 +2,7 @@
 
 import asyncio
 import unittest
+from inspect import signature
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -52,7 +53,11 @@ def entry(service="train", location="A01", options=None, version=2, **data):
         source="user",
         unique_id=location,
         discovery_keys={},
-        subentries_data=[],
+        **(
+            {"subentries_data": []}
+            if "subentries_data" in signature(ConfigEntry).parameters
+            else {}
+        ),
     )
 
 
@@ -247,7 +252,9 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
             ),
         ):
             await setup_sensors(self.hass, e, add)
-        self.assertEqual(len(add.call_args.args[0]), 1)
+        self.assertEqual(
+            sum(s.entity_registry_enabled_default for s in add.call_args.args[0]), 1
+        )
         self.assertEqual(registry.async_remove.call_count, 2)
         other_board = WmataBoardSensor(self.coordinator(entry(location="G01")))
         self.assertNotEqual(add.call_args.args[0][0].unique_id, other_board.unique_id)
@@ -272,8 +279,8 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
         ):
             await setup_sensors(self.hass, e, add)
         sensors = add.call_args.args[0]
-        self.assertEqual(len(sensors), 3)
-        self.assertEqual(len({s.unique_id for s in sensors}), 3)
+        self.assertEqual(sum(s.entity_registry_enabled_default for s in sensors), 3)
+        self.assertEqual(len({s.unique_id for s in sensors}), len(sensors))
         self.assertIn("arrivals", sensors[0]._unrecorded_attributes)
 
     async def test_v1_migration_preserves_credentials_and_polling(self):
@@ -346,6 +353,7 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
     async def test_flow_forms_and_error_codes(self):
         flow = WmataConfigFlow()
         flow.hass = self.hass
+        flow._async_current_entries = MagicMock(return_value=[])
         form = await flow.async_step_user()
         self.assertEqual(form["step_id"], "user")
         with (
@@ -374,6 +382,7 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
     async def test_initial_auth_error_keeps_key_editable(self):
         flow = WmataConfigFlow()
         flow.hass = self.hass
+        flow._async_current_entries = MagicMock(return_value=[])
         with (
             patch(
                 "custom_components.wmata.config_flow.WmataApi.stations",
@@ -390,6 +399,7 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
     async def test_transfer_alias_duplicate(self):
         flow = WmataConfigFlow()
         flow.hass = self.hass
+        flow._async_current_entries = MagicMock(return_value=[])
         flow._setup_data = {"api_key": "test", "service_type": "train"}
         data = dict(
             entry(location="C01").data,
@@ -409,6 +419,7 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
     async def test_reconfigure_preserves_entry_and_reloads_once(self):
         flow = WmataConfigFlow()
         flow.hass = self.hass
+        flow._async_current_entries = MagicMock(return_value=[])
         e = entry()
         with (
             patch.object(flow, "_get_reconfigure_entry", return_value=e),

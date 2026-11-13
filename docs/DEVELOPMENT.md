@@ -6,7 +6,7 @@ Run the backend tests in an HA container:
 
 ~~~sh
 docker run --rm -v "$PWD:/work" -w /work --entrypoint python \
-  ghcr.io/home-assistant/home-assistant:2026.11.1 \
+  ghcr.io/home-assistant/home-assistant:2024.12.5 \
   -m unittest discover -s tests -v
 ~~~
 
@@ -24,11 +24,11 @@ npm test
 python3 tools/build_release.py --output /tmp/wmata.zip
 ~~~
 
-CI runs the tests on HA 2026.11.1 and stable, plus hassfest and HACS validation. Before releasing, also try setup and the cards against a live WMATA subscription.
+CI runs the tests on HA 2024.12.5, 2025.6.3, 2026.1.3, and stable, plus hassfest and HACS validation. Before releasing, also try setup and the cards against a live WMATA subscription.
 
 ## Releases and dependency updates
 
-After merging to main, update `manifest.json` and `CARD_VERSION` together, then push a matching tag such as `v4.6.3`. **Prepare release** runs the tests and validators, builds a ZIP, and creates a draft release with upgrade notes. Review the draft before publishing it. Tags must point to a commit on main.
+After merging to main, update `manifest.json` and `CARD_VERSION` together, then push a matching tag such as `v4.7.0`. **Prepare release** runs the tests and validators, builds a ZIP, and creates a draft release with upgrade notes. Review the draft before publishing it. Tags must point to a commit on main.
 
 For a build without a release, run the workflow manually with **create_draft** unchecked. To create a draft manually, run it on the existing version tag with **create_draft** checked. The tag, manifest, and card versions must match.
 

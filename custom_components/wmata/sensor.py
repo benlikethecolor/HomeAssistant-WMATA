@@ -4,10 +4,13 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import UnitOfTime
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util.dt import parse_datetime
 
-from .const import CONF_JOURNEYS, DOMAIN
+from .const import CONF_JOURNEYS, DOMAIN, LINE_NAME_MAP
 from .coordinator import WmataCoordinator
+from .directions import station_directions
 from .predictions import filter_arrivals
 
 PARALLEL_UPDATES = 0
@@ -24,6 +27,16 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         WmataJourneySensor(coordinator, journey)
         for journey in entry.options.get(CONF_JOURNEYS, [])
     )
+    sensors.extend(
+        WmataDetailSensor(coordinator, kind)
+        for kind in ("destination", "line", "count", "updated")
+    )
+    if coordinator.service_type == "train":
+        sensors.extend(
+            WmataDirectionSensor(coordinator, line, direction)
+            for line in coordinator.served_lines
+            for direction in station_directions(line, coordinator.codes)
+        )
     active = {sensor.unique_id for sensor in sensors}
     registry = er.async_get(hass)
     for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
@@ -49,7 +62,8 @@ class WmataBoardSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
         self._attr_unique_id = (
             f"wmata_{coordinator.service_type}_{coordinator.location.lower()}_board"
         )
-        self.entity_id = f"sensor.wmata_{coordinator.location.lower()}_arrivals"
+        # HA derives readable IDs from device and entity names; existing registry
+        # entries keep their IDs because unique_id is unchanged.
         self._attr_name = "Arrivals"
         self._attr_icon = (
             "mdi:subway" if coordinator.service_type == "train" else "mdi:bus"
@@ -147,3 +161,73 @@ class NetworkMapSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         return self.coordinator.data
+
+
+class WmataDetailSensor(WmataBoardSensor):
+    """Optional scalar values for built-in HA cards and automations."""
+
+    _attr_entity_registry_enabled_default = False
+    _attr_native_unit_of_measurement = None
+    _attr_device_class = None
+
+    def __init__(self, coordinator, kind):
+        super().__init__(coordinator)
+        self.kind = kind
+        self._attr_unique_id += f"_{kind}"
+        self._attr_name = {
+            "destination": "Next destination",
+            "line": "Next line"
+            if coordinator.service_type == "train"
+            else "Next route",
+            "count": "Arrival count",
+            "updated": "Last update",
+        }[kind]
+        self._attr_icon = {
+            "destination": "mdi:sign-direction",
+            "line": "mdi:transit-connection-variant",
+            "count": "mdi:counter",
+            "updated": "mdi:clock-check-outline",
+        }[kind]
+        if kind == "updated":
+            self._attr_device_class = SensorDeviceClass.TIMESTAMP
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def native_value(self):
+        if self.kind == "updated":
+            return (
+                parse_datetime(self.coordinator.data.updated_at)
+                if self.coordinator.data
+                else None
+            )
+        if self.kind == "count":
+            return len(self.arrivals)
+        arrival = self.arrivals[0] if self.arrivals else {}
+        if self.kind == "destination":
+            return arrival.get("destination")
+        return (
+            arrival.get("line_name")
+            if self.coordinator.service_type == "train"
+            else arrival.get("route")
+        )
+
+    @property
+    def extra_state_attributes(self):
+        return None
+
+
+class WmataDirectionSensor(WmataJourneySensor):
+    """Ready-made ETAs: enable one, then use it in a numeric-state trigger."""
+
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator, line, direction):
+        super().__init__(
+            coordinator,
+            {
+                "id": f"line_{line}_{direction.lower()}",
+                "name": f"{LINE_NAME_MAP[line]} {direction.lower()} arrival",
+                "lines": [line],
+                "rail_direction": direction,
+            },
+        )

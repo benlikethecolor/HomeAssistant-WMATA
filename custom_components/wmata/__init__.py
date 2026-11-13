@@ -10,7 +10,7 @@ from .train_map import MapCoordinator
 from .websocket import async_register
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
 async def async_setup(hass, config) -> bool:

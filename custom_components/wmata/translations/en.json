@@ -4,15 +4,16 @@
     "step": {
       "user": {
         "title": "Connect to WMATA",
-        "description": "Add a station, bus stop or systemwide train map. You can add more entries later. Get a subscribed API key from {api_key_url}.",
+        "description": "Add a station, bus stop or systemwide train map. Reuse a saved API key or enter a subscribed key from {api_key_url}.",
         "data": {
           "api_key": "API key",
-          "service_type": "Service"
+          "service_type": "Service",
+          "credential_source": "API key to use"
         }
       },
       "location": {
         "title": "Choose your station or bus stop",
-        "description": "Rail: choose a station or enter its code; all platforms and lines are included. Bus: enter the seven-digit stop ID. Each location gets one arrival board. Add optional saved journeys using Configure after setup.",
+        "description": "Choose a rail station by name; all platforms and lines are included. For buses, enter the seven-digit stop ID.",
         "data": {
           "id": "Station or bus stop"
         }
@@ -21,11 +22,18 @@
         "title": "Update API key",
         "data": {
           "api_key": "API key"
-        }
+        },
+        "description": "Changing this key also updates other WMATA entries that use the same saved key."
       },
       "reauth_confirm": {
         "title": "Reconnect to WMATA",
-        "description": "Enter a working WMATA API key.",
+        "description": "Changing this key also updates other WMATA entries that use the same saved key.",
+        "data": {
+          "api_key": "API key"
+        }
+      },
+      "api_key": {
+        "title": "Enter another WMATA API key",
         "data": {
           "api_key": "API key"
         }
@@ -34,12 +42,13 @@
     "error": {
       "invalid_auth": "WMATA rejected the API key. Check your developer subscription and key.",
       "cannot_connect": "Unable to connect to WMATA. Try again later.",
-      "invalid_location": "Enter a valid rail station code or seven-digit bus stop ID."
+      "invalid_location": "Choose a valid rail station or enter a seven-digit bus stop ID."
     },
     "abort": {
       "already_configured": "This station or bus stop is already configured.",
       "reauth_successful": "WMATA credentials updated.",
-      "reconfigure_successful": "WMATA credentials updated."
+      "reconfigure_successful": "WMATA credentials updated.",
+      "credential_unavailable": "That saved key is no longer available. Start setup again."
     }
   },
   "options": {
@@ -47,16 +56,17 @@
       "init": {
         "title": "Station board and saved journeys",
         "menu_options": {
-          "settings": "Polling settings",
+          "settings": "Polling and arrival settings",
           "add_journey": "Add a journey",
           "edit_journey": "Edit a journey",
           "remove_journey": "Remove a journey"
         }
       },
       "settings": {
-        "title": "Polling settings",
+        "title": "Polling and arrival settings",
         "data": {
-          "scan_interval": "Polling interval in seconds (15\u2013300)"
+          "scan_interval": "Polling interval in seconds (15\u2013300)",
+          "due_soon_minutes": "Due soon threshold in minutes (1\u201360)"
         }
       },
       "add_journey": {

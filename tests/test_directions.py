@@ -8,7 +8,7 @@ from custom_components.wmata.predictions import filter_arrivals, normalize_predi
 
 
 class DirectionsTest(unittest.TestCase):
-    def test_court_house_and_group_independence(self):
+    def test_transfer_station_and_group_independence(self):
         mt_vernon = normalize_prediction(
             {"LocationCode": "C11", "Line": "YL", "DestinationName": "MtVern Sq"},
             "train",
@@ -27,7 +27,7 @@ class DirectionsTest(unittest.TestCase):
             ):
                 row = normalize_prediction(
                     {
-                        "LocationCode": "K01",
+                        "LocationCode": "C01",
                         "Line": line,
                         "DestinationCode": code,
                         "Group": group,
@@ -38,11 +38,11 @@ class DirectionsTest(unittest.TestCase):
                 self.assertEqual(row["direction"], expected)
                 self.assertEqual(
                     row["next_station_code"],
-                    "C05" if expected == "Eastbound" else "K02",
+                    "D01" if expected == "Eastbound" else "C02",
                 )
         # WMATA sometimes omits the destination code but retains an abbreviation.
         row = normalize_prediction(
-            {"LocationCode": "K01", "Line": "SV", "DestinationName": "NewCrlton"},
+            {"LocationCode": "C01", "Line": "SV", "DestinationName": "NewCrlton"},
             "train",
         )
         self.assertEqual(row["direction"], "Eastbound")

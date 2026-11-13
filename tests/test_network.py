@@ -76,6 +76,7 @@ class NetworkTest(unittest.IsolatedAsyncioTestCase):
     ):
         flow = WmataConfigFlow()
         flow.hass = SimpleNamespace(data={})
+        flow._async_current_entries = MagicMock(return_value=[])
         with (
             patch(
                 "custom_components.wmata.config_flow.async_get_clientsession",

@@ -14,11 +14,13 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import APIAuthError, APIConnectionError, InvalidLocation, WmataApi
 from .const import (
+    CONF_DUE_SOON,
     CONF_INTERVAL,
     CONF_JOURNEYS,
     CONF_LINES,
     CONF_ROUTES,
     CONF_SERVICE_TYPE,
+    DEFAULT_DUE_SOON,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     LINE_NAME_MAP,
@@ -97,8 +99,38 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(config_entry):
         return WmataOptionsFlow()
 
+    def _saved_keys(self):
+        """Refer to saved credentials by entry, never by the key itself."""
+        keys = {}
+        seen = set()
+        for entry in self._async_current_entries():
+            key = entry.data.get(CONF_API_KEY)
+            if key and key not in seen:
+                keys[entry.entry_id] = entry
+                seen.add(key)
+        return keys
+
+    async def async_step_api_key(self, user_input=None):
+        if user_input is not None:
+            return await self.async_step_user({**self._pending_service, **user_input})
+        return self.async_show_form(step_id="api_key", data_schema=KEY_SCHEMA)
+
     async def async_step_user(self, user_input=None):
         errors = {}
+        saved = self._saved_keys()
+        if user_input is not None and CONF_API_KEY not in user_input:
+            source = user_input.get("credential_source")
+            if source == "new":
+                self._pending_service = {
+                    CONF_SERVICE_TYPE: user_input[CONF_SERVICE_TYPE]
+                }
+                return await self.async_step_api_key()
+            if source not in saved:
+                return self.async_abort(reason="credential_unavailable")
+            user_input = {
+                CONF_SERVICE_TYPE: user_input[CONF_SERVICE_TYPE],
+                CONF_API_KEY: saved[source].data[CONF_API_KEY],
+            }
         if user_input is not None:
             user_input = {**user_input, CONF_API_KEY: user_input[CONF_API_KEY].strip()}
             try:
@@ -122,11 +154,35 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
                     )
                 self._setup_data = dict(user_input)
                 return await self.async_step_location()
+        key_fields = KEY_SCHEMA.schema
+        if saved and not (user_input and CONF_API_KEY in user_input and errors):
+            key_fields = {
+                vol.Required(
+                    "credential_source", default=next(iter(saved))
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            *[
+                                selector.SelectOptionDict(
+                                    value=entry_id, label=f"Saved key — {entry.title}"
+                                )
+                                for entry_id, entry in saved.items()
+                            ],
+                            selector.SelectOptionDict(
+                                value="new", label="Enter a different API key"
+                            ),
+                        ]
+                    )
+                )
+            }
         schema = vol.Schema(
             {
-                **KEY_SCHEMA.schema,
+                **key_fields,
                 vol.Required(
-                    CONF_SERVICE_TYPE, default="train"
+                    CONF_SERVICE_TYPE,
+                    default=user_input.get(CONF_SERVICE_TYPE, "train")
+                    if user_input
+                    else "train",
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=[
@@ -177,7 +233,7 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(title=data["location_name"], data=data)
         if self._setup_data[CONF_SERVICE_TYPE] == "train":
-            # Show each physical station once; custom codes permit either platform.
+            # Show each physical station once by name.
             choices = {}
             for code, name in STATION_CODE_MAP.items():
                 choices.setdefault(name, code)
@@ -186,11 +242,11 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
                     options=[
                         selector.SelectOptionDict(
                             value=code,
-                            label=f"{name} ({'/'.join(station_codes(code))})",
+                            label=name,
                         )
                         for name, code in sorted(choices.items())
                     ],
-                    custom_value=True,
+                    custom_value=False,
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 )
             )
@@ -224,6 +280,17 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             try:
                 data = await validate_location(self.hass, {**entry.data, **user_input})
+                shared = [
+                    other
+                    for other in self._async_current_entries()
+                    if other.entry_id != entry.entry_id
+                    and other.data.get(CONF_API_KEY) == entry.data.get(CONF_API_KEY)
+                ]
+                # Validate every affected service before changing any saved key.
+                for other in shared:
+                    await validate_location(
+                        self.hass, {**other.data, CONF_API_KEY: data[CONF_API_KEY]}
+                    )
             except APIAuthError:
                 errors["base"] = "invalid_auth"
             except APIConnectionError:
@@ -231,6 +298,14 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
             except InvalidLocation:
                 errors["base"] = "invalid_location"
             else:
+                # A saved key represents the same subscription across entries.
+                for other in shared:
+                    self.hass.config_entries.async_update_entry(
+                        other, data={**other.data, CONF_API_KEY: data[CONF_API_KEY]}
+                    )
+                    self.hass.async_create_task(
+                        self.hass.config_entries.async_reload(other.entry_id)
+                    )
                 return self.async_update_reload_and_abort(
                     entry,
                     data_updates=data,
@@ -272,6 +347,18 @@ class WmataOptionsFlow(OptionsFlow):
                             CONF_INTERVAL, DEFAULT_SCAN_INTERVAL
                         ),
                     ): vol.All(vol.Coerce(int), vol.Range(min=15, max=300)),
+                    **(
+                        {
+                            vol.Required(
+                                CONF_DUE_SOON,
+                                default=self.config_entry.options.get(
+                                    CONF_DUE_SOON, DEFAULT_DUE_SOON
+                                ),
+                            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=60))
+                        }
+                        if self.config_entry.data[CONF_SERVICE_TYPE] != "map"
+                        else {}
+                    ),
                 }
             ),
         )
