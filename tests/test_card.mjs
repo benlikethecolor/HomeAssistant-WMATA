@@ -516,7 +516,7 @@ test("appearance presets and journey instructions preserve the arrival data", (t
   );
   assert.match(
     root.querySelector(".journey-route").textContent,
-    /Connection estimates appear with each transfer/,
+    /Train countdowns below show time until boarding/,
   );
 });
 
@@ -554,6 +554,7 @@ const transferResponse = () => ({
     { index: 0, available: true, arrivals: [], ride_minutes: 4 },
     {
       index: 1,
+      ride_minutes: 8,
       available: true,
       updated_at: new Date().toISOString(),
       arrivals: [
@@ -674,6 +675,7 @@ test("disabling or removing a journey card cancels transfer polling and ignores 
   f.card.setConfig({
     entity: "sensor.wmata_g01_arrivals",
     show_transfer_predictions: false,
+    show_destination_eta: false,
   });
   assert.equal(f.card._transferTimer, null);
   assert.equal(f.root.querySelector(".journey-transfers"), null);
@@ -683,6 +685,7 @@ test("disabling or removing a journey card cancels transfer polling and ignores 
   f.card.setConfig({
     entity: "sensor.wmata_g01_arrivals",
     show_transfer_predictions: true,
+    show_destination_eta: true,
   });
   assert.ok(f.card._transferTimer);
   f.card.remove();
@@ -732,6 +735,11 @@ test("the journey editor exposes transfer visibility and row count without dupli
   assert.equal(form.data.show_transfer_predictions, true);
   assert.equal(form.data.transfer_rows, 3);
   assert.equal(form.data.transfer_buffer, 3);
+  assert.equal(form.data.show_destination_eta, true);
+  assert.equal(
+    form.schema.filter((field) => field.name === "show_destination_eta").length,
+    1,
+  );
   assert.equal(
     form.schema.filter((field) => field.name === "transfer_buffer").length,
     1,
@@ -882,4 +890,196 @@ test("connection estimates account for different snapshot ages and origin filter
   f.card.setConfig({ entity: "sensor.wmata_g01_arrivals", lines: ["SV"] });
   assert.equal(f.card._connectionPlan().origin, undefined);
   assert.equal(f.root.querySelectorAll('[data-connection="likely"]').length, 0);
+});
+
+test("destination arrival includes origin wait, rides, platform changes and connection waits once", async (t) => {
+  const f = await estimatedJourney(t, [2, 12, 15]);
+  const plan = f.card._connectionPlan();
+  // 4 min origin wait + 4 min ride + 3 min changing + 1 min wait + 8 min final ride.
+  assert.equal(plan.arrival, Date.parse(f.stamp) + 20 * 60000);
+  assert.match(
+    f.root.querySelector(".journey-eta").textContent,
+    /Estimated arrival · NoMa-Gallaudet U/,
+  );
+  assert.match(
+    f.root.querySelector(".journey-eta-details").textContent,
+    /About 20 min from now/,
+  );
+  assert.match(
+    f.root.querySelector(".journey-eta").textContent,
+    /transfer waits, and 3 min to switch platforms/,
+  );
+  assert.equal(
+    f.root.querySelector(".journey-route").nextElementSibling.className,
+    "journey-eta",
+  );
+  f.card.setConfig({ entity: "sensor.wmata_g01_arrivals", transfer_buffer: 6 });
+  assert.equal(
+    f.card._connectionPlan().arrival,
+    Date.parse(f.stamp) + 23 * 60000,
+  );
+  assert.match(
+    f.root.querySelector(".journey-eta").textContent,
+    /6 min to switch/,
+  );
+});
+
+test("destination arrival stops when any connection, final ride or fresh prediction is missing", async (t) => {
+  const f = await estimatedJourney(t, [2, 5]);
+  assert.equal(f.card._connectionPlan().arrival, undefined);
+  assert.match(
+    f.root.querySelector(".journey-eta").textContent,
+    /No catchable connection/,
+  );
+  assert.equal(f.root.querySelector(".journey-eta-time"), null);
+  f.result.legs[1].arrivals[1].minutes = 12;
+  f.result.legs[1].ride_minutes = null;
+  f.card._renderTransfers();
+  assert.match(
+    f.root.querySelector(".journey-eta").textContent,
+    /Scheduled ride time is unavailable/,
+  );
+  f.result.legs[1].ride_minutes = 8;
+  f.card._renderTransfers();
+  assert.ok(f.root.querySelector(".journey-eta-time"));
+  f.result.legs[1].updated_at = new Date(Date.now() - 180000).toISOString();
+  f.card._updateFreshness();
+  assert.equal(f.root.querySelector(".journey-eta-time"), null);
+  assert.match(
+    f.root.querySelector(".journey-eta").textContent,
+    /Waiting for fresh transfer predictions/,
+  );
+  f.result.legs[1].updated_at = f.stamp;
+  f.card._transferError = true;
+  f.card._renderTransfers();
+  assert.match(
+    f.root.querySelector(".journey-eta").textContent,
+    /temporarily unavailable/,
+  );
+});
+
+test("multiple-transfer destination arrival uses the last suggested train and its ride", async (t) => {
+  const f = await estimatedJourney(t, [12]);
+  f.card._hass.states["sensor.wmata_g01_arrivals"].attributes.journey_route = {
+    ...transferRoute,
+    destination_name: "Glenmont",
+    legs: [
+      ...transferRoute.legs,
+      {
+        from: "B35",
+        to: "B11",
+        from_name: "NoMa-Gallaudet U",
+        to_name: "Glenmont",
+      },
+    ],
+  };
+  f.result.legs[1].ride_minutes = 6;
+  f.result.legs.push({
+    index: 2,
+    available: true,
+    updated_at: f.stamp,
+    ride_minutes: 20,
+    arrivals: [{ ...f.result.legs[1].arrivals[0], minutes: 22 }],
+  });
+  f.card._renderTransfers();
+  assert.equal(
+    f.card._connectionPlan().arrival,
+    Date.parse(f.stamp) + 42 * 60000,
+  );
+  assert.match(f.root.querySelector(".journey-eta").textContent, /Glenmont/);
+});
+
+test("destination summary works without displaying transfer boards and can be hidden independently", async (t) => {
+  const f = await estimatedJourney(t, [12], {
+    show_transfer_predictions: false,
+  });
+  assert.equal(f.root.querySelector(".journey-transfers"), null);
+  assert.ok(f.root.querySelector(".journey-eta-time"));
+  assert.ok(f.card._transferTimer);
+  f.card.setConfig({
+    entity: "sensor.wmata_g01_arrivals",
+    show_destination_eta: false,
+  });
+  assert.equal(f.root.querySelector(".journey-eta"), null);
+  assert.ok(f.root.querySelector(".journey-transfers"));
+  assert.ok(f.card._transferTimer);
+  f.card.setConfig({
+    entity: "sensor.wmata_g01_arrivals",
+    show_destination_eta: false,
+    show_transfer_predictions: false,
+  });
+  assert.equal(f.card._transferTimer, null);
+  assert.throws(
+    () =>
+      f.card.setConfig({
+        entity: "sensor.wmata_g01_arrivals",
+        show_destination_eta: "yes",
+      }),
+    /show_destination_eta/,
+  );
+});
+
+test("direct journeys fetch ride times for the destination ETA without transfer boards", async (t) => {
+  const f = fixture(t);
+  let calls = 0;
+  const stamp = new Date().toISOString();
+  const original = f.hass.states["sensor.wmata_g01_arrivals"];
+  f.card.hass = {
+    ...f.hass,
+    states: {
+      "sensor.wmata_g01_arrivals": {
+        ...original,
+        attributes: {
+          ...original.attributes,
+          board_type: "journey",
+          updated_at: stamp,
+          journey_route: {
+            origin_name: "Foggy Bottom-GWU",
+            destination_name: "Metro Center",
+            legs: [transferRoute.legs[0]],
+          },
+          arrivals: [{ ...sample[0], minutes: 4 }],
+        },
+      },
+    },
+    callWS: async () => {
+      calls++;
+      return {
+        legs: [
+          {
+            index: 0,
+            available: true,
+            updated_at: stamp,
+            ride_minutes: 4,
+            arrivals: [],
+          },
+        ],
+      };
+    },
+  };
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1);
+  assert.equal(f.root.querySelector(".journey-transfers"), null);
+  assert.equal(f.card._connectionPlan().arrival, Date.parse(stamp) + 8 * 60000);
+  assert.match(
+    f.root.querySelector(".journey-eta").textContent,
+    /Metro Center/,
+  );
+  assert.doesNotMatch(
+    f.root.querySelector(".journey-eta").textContent,
+    /platforms|transfer waits/,
+  );
+  const editor = f.window.document.createElement("wmata-station-card-editor");
+  editor.setConfig({ entity: "sensor.wmata_g01_arrivals" });
+  editor.hass = f.card._hass;
+  const names = editor
+    .querySelector("ha-form")
+    .schema.map((field) => field.name);
+  assert.ok(names.includes("show_destination_eta"));
+  assert.ok(!names.includes("transfer_buffer"));
+  f.card.setConfig({
+    entity: "sensor.wmata_g01_arrivals",
+    show_destination_eta: false,
+  });
+  assert.equal(f.card._transferTimer, null);
 });

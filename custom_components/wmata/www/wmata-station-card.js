@@ -41,6 +41,7 @@ const validAppearance = (value) =>
       }),
     );
   const STYLE = `
+    .journey-eta{margin:0 22px 16px;padding:12px;border:1px solid var(--divider-color,#e2e7eb);border-radius:12px}.journey-eta-heading{font-size:12px;color:var(--secondary-text-color,#64717b);margin-bottom:5px}.journey-eta-time{font-size:22px;font-weight:650;line-height:1.4}.journey-eta-details{font-size:11px;line-height:1.6;color:var(--secondary-text-color,#64717b);margin-top:4px}
     .connection-summary{font-size:12px;line-height:1.6;margin:0 0 10px;color:var(--secondary-text-color,#64717b)}.connection-label{font-size:11px;font-weight:600;margin-top:5px}.arrival[data-connection=likely]{background:color-mix(in srgb,var(--success-color,#278057) 12%,transparent);border-radius:8px;padding-left:8px;padding-right:8px}.arrival[data-connection=likely] .connection-label{color:var(--success-color,#278057)}.arrival[data-connection=early] .connection-label{color:var(--secondary-text-color,#64717b)}
     .leg-heading{padding:0 22px 12px;font-size:13px;font-weight:600;line-height:1.5}.journey-transfers{border-top:1px solid var(--divider-color,#e2e7eb);padding:16px 22px}.transfer-note{font-size:12px;line-height:1.5;color:var(--secondary-text-color,#64717b);margin:0 0 14px}.transfer-station{margin-top:16px}.transfer-title{font-size:14px;font-weight:600;line-height:1.5;margin:0 0 8px}.transfer-status,.transfer-updated{font-size:11px;color:var(--secondary-text-color,#64717b);line-height:1.5}.transfer-updated{margin-top:8px}.transfer-updated[data-stale=true]{color:var(--warning-color,#9a660d)}
     .journey-route{margin:0 22px 14px;padding:12px;border-radius:12px;background:var(--secondary-background-color,#eff3f5);font-size:13px;line-height:1.5}.journey-route small{display:block;margin-top:4px;color:var(--secondary-text-color,#64717b)}
@@ -108,11 +109,9 @@ const validAppearance = (value) =>
           config.transfer_rows > 10)
       )
         throw new Error("transfer_rows must be an integer between 1 and 10.");
-      if (
-        config.show_transfer_predictions !== undefined &&
-        typeof config.show_transfer_predictions !== "boolean"
-      )
-        throw new Error("show_transfer_predictions must be true or false");
+      for (const key of ["show_transfer_predictions", "show_destination_eta"])
+        if (config[key] !== undefined && typeof config[key] !== "boolean")
+          throw new Error(`${key} must be true or false`);
       if (
         config.transfer_buffer !== undefined &&
         (!Number.isInteger(config.transfer_buffer) ||
@@ -138,6 +137,7 @@ const validAppearance = (value) =>
         show_filters: true,
         show_updated: true,
         show_transfer_predictions: true,
+        show_destination_eta: true,
         transfer_rows: 3,
         transfer_buffer: 3,
         ...config,
@@ -172,6 +172,10 @@ const validAppearance = (value) =>
         : 0;
       return (
         2 +
+        (this._config?.show_destination_eta &&
+        this._transferRoute()?.legs?.length
+          ? 2
+          : 0) +
         (this._config?.max_rows || 8) +
         transfers * (2 + (this._config?.transfer_rows || 3))
       );
@@ -232,8 +236,11 @@ const validAppearance = (value) =>
       const route = this._transferRoute();
       if (
         !this.isConnected ||
-        !this._config?.show_transfer_predictions ||
-        !(route?.legs?.length > 1) ||
+        !(route?.legs?.length > 0) ||
+        (!this._config?.show_destination_eta &&
+          !(
+            this._config?.show_transfer_predictions && route.legs.length > 1
+          )) ||
         typeof this._hass?.callWS !== "function"
       ) {
         this._stopTransferPolling();
@@ -296,6 +303,8 @@ const validAppearance = (value) =>
     _renderTransfers() {
       const previous = this.shadowRoot.querySelector(".journey-transfers");
       const route = this._transferRoute();
+      const connections = this._connectionPlan();
+      this._renderDestination(connections);
       if (
         !this._config?.show_transfer_predictions ||
         !(route?.legs?.length > 1)
@@ -316,7 +325,6 @@ const validAppearance = (value) =>
             " min to change platforms. Estimates are not guaranteed; delays can change them.",
         ),
       );
-      const connections = this._connectionPlan();
       if (connections.origin) {
         section.append(
           element(
@@ -429,6 +437,71 @@ const validAppearance = (value) =>
         minute: "2-digit",
       });
     }
+    _renderDestination(plan) {
+      const previous = this.shadowRoot.querySelector(".journey-eta");
+      const route = this._transferRoute();
+      if (!this._config?.show_destination_eta || !route?.legs?.length) {
+        previous?.remove();
+        return;
+      }
+      const card = this.shadowRoot.querySelector("ha-card");
+      if (!card) return;
+      const section = element("section", "journey-eta");
+      section.setAttribute("aria-label", "Estimated destination arrival");
+      section.append(
+        element(
+          "div",
+          "journey-eta-heading",
+          "Estimated arrival · " +
+            (route.destination_name || route.legs.at(-1).to_name),
+        ),
+      );
+      if (Number.isFinite(plan.arrival)) {
+        section.append(
+          element(
+            "div",
+            "journey-eta-time",
+            "About " + this._clock(plan.arrival),
+          ),
+        );
+        const minutes = Math.max(
+          0,
+          Math.ceil((plan.arrival - Date.now()) / 60000),
+        );
+        section.append(
+          element(
+            "div",
+            "journey-eta-details",
+            `About ${minutes} min from now · includes the wait for the first train, all rides${route.legs.length > 1 ? ", transfer waits, and " + this._config.transfer_buffer + " min to switch platforms at each transfer" : ""}.`,
+          ),
+        );
+        section.append(
+          element(
+            "div",
+            "journey-eta-details",
+            "Based on the next matching origin train and scheduled ride times. Delays can change this estimate.",
+          ),
+        );
+      } else {
+        section.append(
+          element(
+            "div",
+            "journey-eta-details",
+            !this._transferData &&
+              !this._transferError &&
+              typeof this._hass?.callWS === "function"
+              ? "Loading journey estimate…"
+              : "Arrival estimate unavailable. " + plan.arrival_reason,
+          ),
+        );
+      }
+      if (previous) previous.replaceWith(section);
+      else {
+        const instructions = card.querySelector(".journey-route");
+        if (instructions) instructions.after(section);
+        else card.querySelector(".header")?.after(section);
+      }
+    }
     _connectionPlan() {
       const now = Date.now();
       const state = this._hass?.states?.[this._config?.entity];
@@ -509,6 +582,28 @@ const validAppearance = (value) =>
         }
         result.legs.push(estimate);
       }
+      const finalRide = this._transferData?.find(
+        (leg) => leg.index === route?.legs?.length - 1,
+      )?.ride_minutes;
+      if (
+        !this._transferError &&
+        boarded !== null &&
+        Number.isFinite(finalRide) &&
+        finalRide > 0
+      ) {
+        // The selected departure already includes the platform allowance and wait.
+        result.arrival = boarded + finalRide * 60000;
+      } else {
+        result.arrival_reason = this._transferError
+          ? "Journey predictions are temporarily unavailable."
+          : !result.origin
+            ? "No fresh origin departure is available."
+            : result.legs.some((leg) => leg.stale)
+              ? "Waiting for fresh transfer predictions."
+              : result.legs.some((leg) => leg.ready && !leg.chosen)
+                ? "No catchable connection is available in the current prediction window."
+                : "Scheduled ride time is unavailable.";
+      }
       return result;
     }
     _updateTransferAges() {
@@ -585,9 +680,9 @@ const validAppearance = (value) =>
           element(
             "small",
             null,
-            "ETA is for boarding at " +
+            "Train countdowns below show time until boarding at " +
               attrs.journey_route.origin_name +
-              ". Connection estimates appear with each transfer.",
+              ".",
           ),
         );
         card.append(route);
@@ -815,6 +910,7 @@ const validAppearance = (value) =>
         show_filters: true,
         show_updated: true,
         show_transfer_predictions: true,
+        show_destination_eta: true,
         transfer_rows: 3,
         transfer_buffer: 3,
         ...config,
@@ -858,6 +954,7 @@ const validAppearance = (value) =>
             entity: "Station board or journey",
             appearance: "Appearance",
             show_transfer_predictions: "Live transfer predictions",
+            show_destination_eta: "Estimated arrival at destination",
             transfer_rows: "Trains per transfer",
             transfer_buffer: "Minutes to change platforms",
             title: "Title (optional)",
@@ -897,10 +994,15 @@ const validAppearance = (value) =>
             (field) =>
               ![
                 "show_transfer_predictions",
+                "show_destination_eta",
                 "transfer_rows",
                 "transfer_buffer",
               ].includes(field.name),
           ),
+        ...(this._hass.states[this._config.entity]?.attributes?.journey_route
+          ?.legs?.length > 0
+          ? [{ name: "show_destination_eta", selector: { boolean: {} } }]
+          : []),
         ...(this._hass.states[this._config.entity]?.attributes?.journey_route
           ?.legs?.length > 1
           ? [

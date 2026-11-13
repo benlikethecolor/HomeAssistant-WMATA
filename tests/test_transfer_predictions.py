@@ -105,6 +105,23 @@ def fixture(route=None):
 
 
 class TransferPredictionsTest(unittest.IsolatedAsyncioTestCase):
+    async def test_direct_journey_returns_ride_time_without_transfer_requests(self):
+        hass, entry, entity, registry, connection, api = fixture(
+            plan_journey("C04", "A01")
+        )
+        with patch(
+            "custom_components.wmata.websocket.er.async_get", return_value=registry
+        ):
+            await inspect.unwrap(journey_arrivals)(
+                hass, connection, {"id": 1, "entity_id": "sensor.trip"}
+            )
+        legs = connection.send_result.call_args.args[1]["legs"]
+        self.assertEqual(len(legs), 1)
+        self.assertTrue(legs[0]["available"])
+        self.assertEqual(legs[0]["ride_minutes"], 4)
+        api.trains.assert_not_awaited()
+        api.rail_times.assert_awaited_once()
+
     async def test_each_leg_is_filtered_and_multiple_cards_share_the_request(self):
         hass, entry, entity, registry, connection, api = fixture()
         with patch(
