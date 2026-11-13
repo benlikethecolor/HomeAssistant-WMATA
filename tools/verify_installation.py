@@ -59,24 +59,33 @@ async def verify(scenario):
                 }
             if path.startswith("StationPrediction"):
                 codes = set(path.rsplit("/", 1)[-1].split(","))
-                if codes.intersection({"B01", "F01", "D03", "F03"}):
-                    location = "F01" if codes.intersection({"B01", "F01"}) else "F03"
-                    return {
-                        "Trains": [
-                            {
-                                "Line": "YL",
-                                "LocationCode": location,
-                                "DestinationCode": "C15",
-                                "Min": "6",
-                            },
-                            {
-                                "Line": "GR",
-                                "LocationCode": location,
-                                "DestinationCode": "F11",
-                                "Min": "3",
-                            },
-                        ]
-                    }
+                trains = [
+                    row
+                    for row in fixture["StationPrediction"]["Trains"]
+                    if row["LocationCode"] in codes
+                ]
+                for aliases, location in (
+                    ({"B01", "F01"}, "F01"),
+                    ({"D03", "F03"}, "F03"),
+                ):
+                    if codes.intersection(aliases):
+                        trains.extend(
+                            [
+                                {
+                                    "Line": "YL",
+                                    "LocationCode": location,
+                                    "DestinationCode": "C15",
+                                    "Min": "6",
+                                },
+                                {
+                                    "Line": "GR",
+                                    "LocationCode": location,
+                                    "DestinationCode": "F11",
+                                    "Min": "3",
+                                },
+                            ]
+                        )
+                return {"Trains": trains}
             assert key in fixture, key
             return fixture[key]
 

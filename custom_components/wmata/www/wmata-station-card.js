@@ -40,6 +40,28 @@ const validAppearance = (value) =>
         composed: true,
       }),
     );
+  const previewHass = (hass, result) => {
+    const origin = result.legs[0];
+    return {
+      ...hass,
+      states: {
+        ...hass.states,
+        "sensor.wmata_trip_preview": {
+          state: String(origin.arrivals[0]?.minutes ?? "unknown"),
+          attributes: {
+            schema_version: 1,
+            board_type: "journey",
+            service_type: "train",
+            journey_name: "To " + result.route.destination_name,
+            journey_route: result.route,
+            route_description: result.route_description,
+            arrivals: origin.arrivals,
+            updated_at: origin.updated_at,
+          },
+        },
+      },
+    };
+  };
   const STYLE = `
     .trip-itinerary{list-style:none;margin:12px 0 0;padding:0}.trip-itinerary li{border-top:1px solid var(--divider-color,#ddd);padding:10px 0;font-size:12px;line-height:1.6}.trip-itinerary strong{font-weight:650}.trip-itinerary small{display:block;color:var(--secondary-text-color,#64717b)}.schedule-tag{color:var(--warning-color,#9a660d)}.arrival[data-connection=likely][data-source=schedule]{background:color-mix(in srgb,var(--warning-color,#bb8500) 13%,transparent)}.arrival[data-connection=likely][data-source=schedule] .connection-label{color:var(--warning-color,#9a660d)}.departure-clock{font-size:11px;color:var(--secondary-text-color,#64717b);margin-top:4px}
     .origin-choice,.origin-reset{font:inherit;font-size:11px;border:1px solid var(--divider-color,#ccc);border-radius:8px;padding:5px 8px;background:transparent;color:inherit;cursor:pointer;margin-top:7px}.origin-choice[aria-pressed=true]{border-color:var(--primary-color,#0076be);background:color-mix(in srgb,var(--primary-color,#0076be) 12%,transparent)}.origin-choice:disabled{opacity:.5;cursor:default}.origin-selection{padding:0 22px 12px;font-size:12px;color:var(--secondary-text-color,#64717b)}
@@ -254,37 +276,74 @@ const validAppearance = (value) =>
         departure: this._departureAt(arrival, state.attributes.updated_at),
       };
       this._render();
+      emit(this, "wmata-origin-selected", {});
     }
-    setJourneyPreview(hass, result, config) {
+    setJourneyPreview(hass, result, config, recommendation = null) {
       this._preview = true;
       const oldRoute = this._routeKey();
       this.setConfig({ ...config, entity: "sensor.wmata_trip_preview" });
       this._transferData = result.legs;
       this._transferError = false;
-      const origin = result.legs[0];
-      this.hass = {
-        ...hass,
-        states: {
-          ...hass.states,
-          "sensor.wmata_trip_preview": {
-            state: String(origin.arrivals[0]?.minutes ?? "unknown"),
-            attributes: {
-              schema_version: 1,
-              board_type: "journey",
-              service_type: "train",
-              journey_name: "To " + result.route.destination_name,
-              journey_route: result.route,
-              route_description: result.route_description,
-              arrivals: origin.arrivals,
-              updated_at: origin.updated_at,
-            },
-          },
-        },
-      };
+      this._recommendedOrigin = recommendation;
+      this.hass = previewHass(hass, result);
       if (oldRoute !== this._routeKey()) {
         this._originSelection = null;
         this._render();
       }
+    }
+    static estimateJourney(hass, result, config, now, selection = null) {
+      const estimator = new WmataStationCard();
+      estimator._config = {
+        transfer_buffer: 3,
+        ...config,
+        entity: "sensor.wmata_trip_preview",
+      };
+      estimator._hass = previewHass(hass, result);
+      estimator._transferData = result.legs;
+      estimator._estimateNow = now;
+      estimator._originSelection = selection ? { ...selection } : null;
+      if (!selection) {
+        const origin = estimator._hass.states[estimator._config.entity];
+        const options = estimator
+          ._configuredArrivals(origin)
+          .map((arrival) => {
+            const departure = estimator._departureAt(
+              arrival,
+              origin.attributes.updated_at,
+            );
+            const available =
+              arrival.prediction_source === "schedule" ||
+              estimator._fresh(origin.attributes);
+            return {
+              arrival,
+              departure,
+              reach:
+                departure !== null && departure >= now - 30000 && available
+                  ? estimator._rideArrival(
+                      arrival,
+                      Math.max(now, departure),
+                      result.legs[0],
+                    )
+                  : null,
+            };
+          })
+          .filter((value) => value.reach !== null)
+          .sort((a, b) => a.reach - b.reach || a.departure - b.departure);
+        const next = estimator._connectionPlan().origin;
+        if (options[0] && options[0].arrival !== next)
+          estimator._recommendedOrigin = {
+            route: estimator._routeKey(),
+            signature: estimator._originSignature(options[0].arrival),
+            departure: options[0].departure,
+          };
+      }
+      return {
+        ...estimator._connectionPlan(),
+        recommended_origin: estimator._recommendedOrigin,
+      };
+    }
+    _now() {
+      return this._estimateNow ?? Date.now();
     }
     _stopTransferPolling() {
       clearInterval(this._transferTimer);
@@ -576,7 +635,9 @@ const validAppearance = (value) =>
             "Based on " +
               (this._originSelection
                 ? "your selected origin train"
-                : "the next matching origin train") +
+                : this._recommendedOrigin
+                  ? "the recommended origin train"
+                  : "the next matching origin train") +
               " and scheduled ride times. Delays can change this estimate.",
           ),
         );
@@ -659,12 +720,12 @@ const validAppearance = (value) =>
       const timestamp = Date.parse(data?.updated_at);
       return (
         Number.isFinite(timestamp) &&
-        Date.now() - timestamp <= 90000 &&
-        timestamp <= Date.now() + 30000
+        this._now() - timestamp <= 90000 &&
+        timestamp <= this._now() + 30000
       );
     }
     _mergeArrivals(arrivals, data, updatedAt) {
-      const now = Date.now();
+      const now = this._now();
       const windows = new Map();
       if (this._fresh({ updated_at: updatedAt }))
         for (const arrival of arrivals) {
@@ -708,7 +769,7 @@ const validAppearance = (value) =>
         : null;
     }
     _connectionPlan() {
-      const now = Date.now();
+      const now = this._now();
       const state = this._hass?.states?.[this._config?.entity];
       const route = this._transferRoute();
       const origins = this._configuredArrivals(state)
@@ -729,17 +790,20 @@ const validAppearance = (value) =>
         .sort((a, b) => a.time - b.time);
       if (this._originSelection?.route !== this._routeKey())
         this._originSelection = null;
+      if (this._recommendedOrigin?.route !== this._routeKey())
+        this._recommendedOrigin = null;
+      const originSelection = this._originSelection || this._recommendedOrigin;
       let selected = origins[0];
-      if (this._originSelection) {
+      if (originSelection) {
         const matches = origins
           .filter(
             (value) =>
               this._originSignature(value.arrival) ===
-              this._originSelection.signature,
+              originSelection.signature,
           )
           .map((value) => ({
             ...value,
-            difference: Math.abs(value.time - this._originSelection.departure),
+            difference: Math.abs(value.time - originSelection.departure),
           }))
           .sort((a, b) => a.difference - b.difference);
         selected =
@@ -808,7 +872,12 @@ const validAppearance = (value) =>
             estimate.statuses.set(arrival, status);
             if (status === "likely") candidates.push({ arrival, time });
           }
-          candidates.sort((a, b) => a.time - b.time);
+          candidates.sort(
+            (a, b) =>
+              (this._rideArrival(a.arrival, a.time, next) ?? Infinity) -
+                (this._rideArrival(b.arrival, b.time, next) ?? Infinity) ||
+              a.time - b.time,
+          );
           estimate.chosen = candidates[0]?.arrival;
           estimate.departure = candidates[0]?.time ?? null;
           estimate.wait_minutes =
@@ -1055,6 +1124,10 @@ const validAppearance = (value) =>
       const shown = filtered.slice(0, this._config.max_rows);
       const journey = attrs.journey_route?.legs?.length > 0;
       const chosenOrigin = journey ? this._connectionPlan().origin : null;
+      if (chosenOrigin && !shown.includes(chosenOrigin)) {
+        if (shown.length) shown[shown.length - 1] = chosenOrigin;
+        else shown.push(chosenOrigin);
+      }
       if (journey && this._originSelection) {
         const selection = element(
           "div",
@@ -1063,11 +1136,16 @@ const validAppearance = (value) =>
             ? "Using your selected origin train. "
             : "Your selected train is no longer available. ",
         );
-        const reset = element("button", "origin-reset", "Use next train");
+        const reset = element(
+          "button",
+          "origin-reset",
+          this._preview ? "Use fastest option" : "Use next train",
+        );
         reset.type = "button";
         reset.onclick = () => {
           this._originSelection = null;
           this._render();
+          emit(this, "wmata-origin-selected", {});
         };
         selection.append(reset);
         card.append(selection);
@@ -1143,7 +1221,9 @@ const validAppearance = (value) =>
           selected
             ? this._originSelection
               ? "Selected train"
-              : "Using next train"
+              : this._recommendedOrigin
+                ? "Recommended train"
+                : "Using next train"
             : "Use this train",
         );
         choose.type = "button";
@@ -1442,6 +1522,7 @@ const validAppearance = (value) =>
       this.shadowRoot.innerHTML = `<style>${STYLE}
         :host{display:block;color:var(--primary-text-color,#202b35);font-family:var(--ha-font-family-body,Roboto,system-ui,sans-serif)}
         ha-card{display:block;border:var(--ha-card-border-width,1px) solid var(--divider-color,#ddd);border-radius:var(--ha-card-border-radius,24px);background:var(--ha-card-background,var(--card-background-color,#fff));box-shadow:var(--ha-card-box-shadow,none)}
+        .comparison-summary{font-size:14px;line-height:1.6;margin:12px 0 6px}.comparison-note{font-size:12px;line-height:1.5;color:var(--secondary-text-color)}.route-comparison{margin-top:12px}.route-comparison summary{cursor:pointer;font-size:13px;padding:8px 0}.route-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}.route-choice{text-align:left;display:flex;flex-direction:column;gap:6px}.route-choice strong{font-size:12px}.route-choice span,.route-choice small{font-size:11px;line-height:1.5}.route-choice[aria-pressed=true]{border-color:var(--primary-color,#0076be);background:color-mix(in srgb,var(--primary-color,#0076be) 10%,transparent)}
         .planner-form{padding:16px}.planner-title{font-size:20px;font-weight:400;margin:0 0 12px}.fields{display:flex;gap:12px;flex-wrap:wrap}label{flex:1;min-width:150px;font-size:12px;line-height:1.8;color:var(--secondary-text-color,#64717b)}input{box-sizing:border-box;width:100%;font:inherit;font-size:14px;padding:11px 10px;border:1px solid var(--divider-color,#ccc);border-radius:8px;background:var(--secondary-background-color,#f4f6f7);color:var(--primary-text-color,#222)}
         .actions{display:flex;gap:8px;margin-top:12px}button{font:inherit;font-size:13px;border:1px solid var(--divider-color,#ccc);border-radius:9px;padding:9px 14px;background:transparent;color:inherit;cursor:pointer}button[type=submit]{background:var(--primary-color,#0076be);color:var(--text-primary-color,#fff);border-color:transparent}button:focus-visible,input:focus-visible{outline:2px solid var(--primary-color,#0076be);outline-offset:2px}.status,.scheduled{font-size:12px;line-height:1.6;margin-top:12px;color:var(--secondary-text-color,#64717b)}.result{margin-top:12px}.result:empty{display:none}
       </style>`;
@@ -1491,7 +1572,16 @@ const validAppearance = (value) =>
       this._status = element("div", "status", "Loading station names…");
       this._status.setAttribute("role", "status");
       this._scheduled = element("div", "scheduled");
-      form.append(fields, this._list, actions, this._status, this._scheduled);
+      this._routeOptions = element("section", "route-options");
+      this._routeOptions.setAttribute("aria-label", "Route comparison");
+      form.append(
+        fields,
+        this._list,
+        actions,
+        this._status,
+        this._scheduled,
+        this._routeOptions,
+      );
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         this._plan();
@@ -1511,6 +1601,9 @@ const validAppearance = (value) =>
       this._board?.remove();
       this._board = null;
       this._scheduled.textContent = "";
+      this._routeOptions.replaceChildren();
+      this._chosenRouteId = null;
+      this._activeRouteId = null;
       this._status.textContent = "Choose stations, then plan your trip.";
     }
     async _loadStations() {
@@ -1553,7 +1646,7 @@ const validAppearance = (value) =>
         this._list.append(option);
       }
       this._status.textContent =
-        "Choose stations, then plan your trip. Routes prefer fewer transfers, then fewer stops.";
+        "Choose stations, then compare estimated arrivals using live trains and transfer waits.";
     }
     _resolve(text) {
       const normalize = (value) =>
@@ -1617,6 +1710,7 @@ const validAppearance = (value) =>
           this._result = null;
           this._status.textContent =
             "Trip predictions unavailable. Retrying shortly.";
+          this._routeOptions.replaceChildren();
           if (this._board) {
             this._board._transferError = true;
             this._board._renderTransfers();
@@ -1626,23 +1720,182 @@ const validAppearance = (value) =>
         if (generation === this._generation) this._pending = null;
       }
     }
+    _comparison(result) {
+      const now = Date.now();
+      const choices = (
+        result.alternatives?.length ? result.alternatives : [result]
+      ).map((option) => ({
+        option,
+        id:
+          option.id ||
+          JSON.stringify(
+            option.route.legs.map((leg) => [leg.from, leg.to, leg.lines || []]),
+          ),
+        estimate: WmataStationCard.estimateJourney(
+          this._hass,
+          option,
+          this._config,
+          now,
+        ),
+      }));
+      choices.sort((a, b) => {
+        const at = Number.isFinite(a.estimate.arrival)
+          ? a.estimate.arrival
+          : Infinity;
+        const bt = Number.isFinite(b.estimate.arrival)
+          ? b.estimate.arrival
+          : Infinity;
+        return (
+          at - bt ||
+          Number(a.estimate.schedule_estimate) -
+            Number(b.estimate.schedule_estimate) ||
+          a.option.route.legs.length - b.option.route.legs.length ||
+          (a.option.route.stops || 0) - (b.option.route.stops || 0) ||
+          a.id.localeCompare(b.id)
+        );
+      });
+      return {
+        choices,
+        now,
+        fastest: choices.find((value) =>
+          Number.isFinite(value.estimate.arrival),
+        ),
+      };
+    }
+    _showComparison(comparison, selected) {
+      const wasOpen =
+        this._routeOptions.querySelector("details")?.open || false;
+      this._routeOptions.replaceChildren();
+      if (comparison.choices.length < 2) return;
+      const fastest = comparison.fastest;
+      const summary = element("p", "comparison-summary");
+      if (fastest) {
+        const minutes = Math.max(
+          0,
+          Math.ceil((fastest.estimate.arrival - comparison.now) / 60000),
+        );
+        summary.textContent = `Fastest estimated arrival: ${new Date(fastest.estimate.arrival).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · about ${minutes} min from now.`;
+      } else
+        summary.textContent =
+          "No complete arrival estimates are available. Compare route details below.";
+      this._routeOptions.append(summary);
+      if (this._chosenRouteId) {
+        const reset = element("button", "fastest-reset", "Use fastest option");
+        reset.type = "button";
+        reset.onclick = () => {
+          this._chosenRouteId = null;
+          if (this._board) this._board._originSelection = null;
+          this._showResult(this._result);
+        };
+        this._routeOptions.append(reset);
+        if (this._board?._originSelection)
+          this._routeOptions.append(
+            element(
+              "p",
+              "comparison-note",
+              "Your selected departure is shown below. Route comparisons use the earliest-arriving train combination on each route.",
+            ),
+          );
+      }
+      const details = element("details", "route-comparison");
+      details.open = wasOpen;
+      details.append(
+        element("summary", null, `Compare ${comparison.choices.length} routes`),
+      );
+      const grid = element("div", "route-choices");
+      for (const value of comparison.choices) {
+        const route = value.option.route,
+          estimate = value.estimate;
+        const button = element("button", "route-choice");
+        button.type = "button";
+        button.setAttribute("aria-pressed", String(value.id === selected.id));
+        const via =
+          route.legs.length === 1
+            ? "Direct"
+            : `Via ${route.legs
+                .slice(0, -1)
+                .map((leg) => leg.to_name)
+                .join(" → ")}`;
+        button.append(
+          element(
+            "strong",
+            null,
+            (value === fastest ? "Fastest estimate · " : "") + via,
+          ),
+        );
+        const transferCount = route.legs.length - 1;
+        const clock = Number.isFinite(estimate.arrival)
+          ? `About ${Math.max(0, Math.ceil((estimate.arrival - comparison.now) / 60000))} min · arrive ${new Date(estimate.arrival).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+          : "Arrival estimate unavailable";
+        button.append(element("span", null, clock));
+        button.append(
+          element(
+            "small",
+            null,
+            `${transferCount} transfer${transferCount === 1 ? "" : "s"} · ${!Number.isFinite(estimate.arrival) ? "Arrival data incomplete" : estimate.schedule_estimate ? "Includes timetable estimates" : "Live departures"}`,
+          ),
+        );
+        if (fastest && value !== fastest && Number.isFinite(estimate.arrival))
+          button.append(
+            element(
+              "small",
+              null,
+              `About ${Math.max(0, Math.round((estimate.arrival - fastest.estimate.arrival) / 60000))} min later`,
+            ),
+          );
+        button.onclick = () => {
+          this._chosenRouteId = value.id;
+          this._showResult(this._result);
+        };
+        grid.append(button);
+      }
+      details.append(grid);
+      this._routeOptions.append(details);
+    }
     _showResult(result) {
+      const comparison = this._comparison(result);
+      const selected =
+        comparison.choices.find((value) => value.id === this._chosenRouteId) ||
+        comparison.fastest ||
+        comparison.choices[0];
+      if (!selected) return;
+      if (
+        this._chosenRouteId &&
+        !comparison.choices.some((value) => value.id === this._chosenRouteId)
+      )
+        this._chosenRouteId = null;
       if (!this._board) {
         this._board = document.createElement("wmata-station-card");
+        this._board.addEventListener("wmata-origin-selected", () => {
+          if (!this._result) return;
+          this._chosenRouteId = this._board._originSelection
+            ? this._activeRouteId
+            : null;
+          this._showResult(this._result);
+        });
         this._resultHost.append(this._board);
       }
-      this._board.setJourneyPreview(this._hass, result, {
-        appearance: this._config.appearance,
-        transfer_buffer: this._config.transfer_buffer,
-        max_rows: 8,
-        show_filters: false,
-      });
-      const changes = result.route.legs.length - 1;
+      if (this._activeRouteId !== selected.id)
+        this._board._originSelection = null;
+      this._activeRouteId = selected.id;
+      this._board.setJourneyPreview(
+        this._hass,
+        selected.option,
+        {
+          appearance: this._config.appearance,
+          transfer_buffer: this._config.transfer_buffer,
+          max_rows: 8,
+          show_filters: false,
+        },
+        selected.estimate.recommended_origin,
+      );
+      const changes = selected.option.route.legs.length - 1;
       this._scheduled.textContent = Number.isFinite(
-        result.scheduled_ride_minutes,
+        selected.option.scheduled_ride_minutes,
       )
-        ? `Baseline: about ${Math.ceil(result.scheduled_ride_minutes + changes * this._config.transfer_buffer)} min ${changes ? "riding and switching platforms" : "riding"}, plus train waits. The arrival estimate below includes train waits and labels timetable connections.`
+        ? `Baseline: about ${Math.ceil(selected.option.scheduled_ride_minutes + changes * this._config.transfer_buffer)} min ${changes ? "riding and switching platforms" : "riding"}, plus train waits. The arrival estimate below includes train waits and labels timetable connections.`
         : "Scheduled ride times unavailable. Live departures are shown below when available.";
+      this._showComparison(comparison, selected);
     }
   }
   class WmataTripPlannerEditor extends HTMLElement {

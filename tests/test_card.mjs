@@ -1202,7 +1202,7 @@ function quickTripResponse() {
     ],
   };
 }
-async function plannerFixture(t, handler, config = {}) {
+async function plannerFixture(t, handler, config = {}, stationList) {
   const f = fixture(t);
   const requests = [];
   const planner = f.window.document.createElement("wmata-trip-planner");
@@ -1213,7 +1213,7 @@ async function plannerFixture(t, handler, config = {}) {
       requests.push(msg);
       if (msg.type === "wmata/planner_stations")
         return {
-          stations: [
+          stations: stationList || [
             {
               code: "C04",
               name: "Foggy Bottom-GWU",
@@ -1533,4 +1533,254 @@ test("planner and result share the dashboard appearance and Daylight day-night s
     assert.equal(f.planner.dataset.appearance, appearance);
     assert.equal(f.planner._board.dataset.appearance, appearance);
   }
+});
+
+function competingTrips() {
+  const stamp = new Date().toISOString();
+  const direct = {
+    id: "direct-blue",
+    route: {
+      origin: "C04",
+      origin_name: "Foggy Bottom-GWU",
+      destination: "C13",
+      destination_name: "King St-Old Town",
+      stops: 9,
+      transfers: 0,
+      legs: [
+        {
+          from: "C04",
+          to: "C13",
+          from_name: "Foggy Bottom-GWU",
+          to_name: "King St-Old Town",
+          lines: ["BL"],
+        },
+      ],
+    },
+    route_description: "Board Blue to King St-Old Town.",
+    scheduled_ride_minutes: 22,
+    legs: [
+      {
+        index: 0,
+        available: true,
+        updated_at: stamp,
+        ride_minutes: 22,
+        arrivals: [18, 25].map((minutes) => ({
+          line: "BL",
+          destination: "Franconia-Springfield",
+          destination_code: "J03",
+          minutes,
+          status: "predicted",
+        })),
+      },
+    ],
+  };
+  const change = {
+    id: "via-lenfant",
+    route: {
+      origin: "C04",
+      origin_name: "Foggy Bottom-GWU",
+      destination: "C13",
+      destination_name: "King St-Old Town",
+      stops: 10,
+      transfers: 1,
+      legs: [
+        {
+          from: "C04",
+          to: "D03",
+          from_name: "Foggy Bottom-GWU",
+          to_name: "L'Enfant Plaza",
+          lines: ["OR", "SV"],
+        },
+        {
+          from: "D03",
+          to: "C13",
+          from_name: "L'Enfant Plaza",
+          to_name: "King St-Old Town",
+          lines: ["YL"],
+        },
+      ],
+    },
+    route_description:
+      "Board Orange / Silver to L'Enfant Plaza. Change to Yellow to King St-Old Town.",
+    scheduled_ride_minutes: 20,
+    legs: [
+      {
+        index: 0,
+        available: true,
+        updated_at: stamp,
+        ride_minutes: 8,
+        arrivals: [
+          {
+            line: "OR",
+            destination: "New Carrollton",
+            destination_code: "D13",
+            minutes: 2,
+            status: "predicted",
+          },
+        ],
+      },
+      {
+        index: 1,
+        available: true,
+        updated_at: stamp,
+        ride_minutes: 12,
+        arrivals: [15, 30].map((minutes) => ({
+          line: "YL",
+          destination: "Huntington",
+          destination_code: "C15",
+          minutes,
+          status: "predicted",
+        })),
+      },
+    ],
+  };
+  return { ...direct, alternatives: [direct, change] };
+}
+async function comparisonFixture(t, handler, config = {}) {
+  const f = await plannerFixture(
+    t,
+    handler || (() => competingTrips()),
+    config,
+    [
+      { code: "C04", name: "Foggy Bottom-GWU", lines: ["BL", "OR", "SV"] },
+      { code: "C13", name: "King St-Old Town", lines: ["BL", "YL"] },
+    ],
+  );
+  await planQuickTrip(f, "Foggy", "King St");
+  return f;
+}
+test("planner ranks arrival time ahead of transfer count and shows the time saved", async (t) => {
+  const f = await comparisonFixture(t);
+  assert.equal(f.planner._activeRouteId, "via-lenfant");
+  assert.equal(f.planner._board._transferRoute().legs.length, 2);
+  const buttons = f.plannerRoot.querySelectorAll(".route-choice");
+  assert.match(buttons[0].textContent, /Fastest estimate.*L'Enfant/);
+  assert.match(buttons[1].textContent, /Direct.*13 min later/);
+  assert.equal(buttons[0].getAttribute("aria-pressed"), "true");
+  assert.equal(
+    f.requests.filter((r) => r.type === "wmata/plan_trip").length,
+    1,
+  );
+});
+test("platform-change allowance can change which route is fastest", async (t) => {
+  const f = await comparisonFixture(t);
+  assert.equal(f.planner._activeRouteId, "via-lenfant");
+  f.planner.setConfig({
+    entity: "sensor.wmata_g01_arrivals",
+    transfer_buffer: 10,
+  });
+  await planQuickTrip(f, "Foggy", "King St");
+  assert.equal(f.planner._activeRouteId, "direct-blue");
+  assert.match(
+    f.plannerRoot.querySelector(".route-choice").textContent,
+    /Fastest estimate.*Direct/,
+  );
+});
+test("an alternative can be inspected and a manually selected departure stays pinned until reset", async (t) => {
+  const f = await comparisonFixture(t);
+  [...f.plannerRoot.querySelectorAll(".route-choice")]
+    .find((b) => b.textContent.includes("Direct"))
+    .click();
+  assert.equal(f.planner._activeRouteId, "direct-blue");
+  f.planner._board.shadowRoot.querySelectorAll(".origin-choice")[1].click();
+  assert.equal(f.planner._board._connectionPlan().origin.minutes, 25);
+  await f.planner._refresh();
+  assert.equal(f.planner._activeRouteId, "direct-blue");
+  assert.equal(f.planner._board._connectionPlan().origin.minutes, 25);
+  assert.match(
+    f.plannerRoot.querySelector(".comparison-note").textContent,
+    /selected departure/,
+  );
+  const count = f.requests.length;
+  f.plannerRoot.querySelector(".fastest-reset").click();
+  assert.equal(f.planner._activeRouteId, "via-lenfant");
+  assert.equal(f.requests.length, count);
+});
+test("incomplete routes sort last and no fastest claim appears when all arrivals are unknown", async (t) => {
+  let empty = false;
+  const f = await comparisonFixture(t, () => {
+    const result = competingTrips();
+    result.alternatives[0].legs[0].arrivals = [];
+    if (empty) result.alternatives[1].legs[0].arrivals = [];
+    return result;
+  });
+  assert.equal(f.planner._activeRouteId, "via-lenfant");
+  assert.match(
+    f.plannerRoot.querySelectorAll(".route-choice")[1].textContent,
+    /Arrival estimate unavailable/,
+  );
+  empty = true;
+  await f.planner._refresh();
+  assert.match(
+    f.plannerRoot.querySelector(".comparison-summary").textContent,
+    /No complete arrival estimates/,
+  );
+  assert.ok(
+    [...f.plannerRoot.querySelectorAll(".route-choice")].every(
+      (b) => !b.textContent.includes("Fastest estimate"),
+    ),
+  );
+});
+test("automatic ranking uses the earliest-arriving origin train rather than blindly taking the first departure", async (t) => {
+  const f = await comparisonFixture(t, () => {
+    const result = competingTrips();
+    const direct = result.alternatives[0];
+    const stamp = direct.legs[0].updated_at;
+    direct.legs[0].arrivals = [];
+    direct.legs[0].scheduled_departures = [
+      scheduleDeparture(stamp, 5, 20, "BL"),
+      scheduleDeparture(stamp, 8, 18, "BL"),
+    ];
+    return result;
+  });
+  assert.equal(f.planner._activeRouteId, "direct-blue");
+  const plan = f.planner._board._connectionPlan();
+  assert.equal(plan.origin.minutes, 8);
+  assert.ok(f.planner._board._recommendedOrigin);
+  assert.match(
+    f.plannerRoot.querySelector(".route-choice").textContent,
+    /Includes timetable estimates/,
+  );
+  assert.match(
+    f.planner._board.shadowRoot.querySelector(".journey-eta").textContent,
+    /recommended origin train/,
+  );
+});
+test("route ranking chooses a later transfer departure when its timetable reaches the goal earlier", async (t) => {
+  const f = await comparisonFixture(t, () => {
+    const result = competingTrips();
+    const leg = result.alternatives[1].legs[1];
+    leg.arrivals = [];
+    leg.scheduled_departures = [
+      scheduleDeparture(leg.updated_at, 15, 40, "YL"),
+      scheduleDeparture(leg.updated_at, 18, 30, "YL"),
+    ];
+    return result;
+  });
+  assert.equal(f.planner._activeRouteId, "via-lenfant");
+  const plan = f.planner._board._connectionPlan();
+  assert.equal(plan.legs[0].chosen.minutes, 18);
+  assert.equal(plan.schedule_estimate, true);
+});
+
+test("a recommended origin remains visible when it falls beyond the normal row limit", async (t) => {
+  const f = await comparisonFixture(t, () => {
+    const result = competingTrips();
+    const leg = result.alternatives[0].legs[0];
+    leg.arrivals = [];
+    leg.scheduled_departures = [
+      ...Array.from({ length: 9 }, (_, i) =>
+        scheduleDeparture(leg.updated_at, 5 + i, 35 + i, "BL"),
+      ),
+      scheduleDeparture(leg.updated_at, 20, 25, "BL"),
+    ];
+    return result;
+  });
+  assert.equal(f.planner._activeRouteId, "direct-blue");
+  const buttons =
+    f.planner._board.shadowRoot.querySelectorAll(".origin-choice");
+  assert.equal(buttons.length, 8);
+  assert.equal(buttons[7].getAttribute("aria-pressed"), "true");
+  assert.match(buttons[7].textContent, /Recommended train/);
+  assert.match(buttons[7].getAttribute("aria-label"), /20 minutes/);
 });

@@ -56,7 +56,9 @@ class PlannerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["route"]["destination_name"], "Metro Center")
         self.assertEqual(result["scheduled_ride_minutes"], 4)
         self.assertEqual(result["legs"][0]["arrivals"][0]["minutes"], 7)
-        api.trains.assert_awaited_once_with(["C04"])
+        api.trains.assert_awaited_once()
+        self.assertIn("C04", api.trains.call_args.args[0])
+        self.assertGreater(len(result["alternatives"]), 1)
         self.assertEqual(entry.options, options_before)
         self.assertNotIn("api_key", str(result))
 

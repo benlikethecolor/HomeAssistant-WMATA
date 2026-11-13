@@ -10,10 +10,13 @@ from homeassistant.helpers import entity_registry as er
 
 from .api import APIAuthError, APIConnectionError
 from .connections import ride_minutes
-from .const import CONF_JOURNEYS, DOMAIN, STATION_CODE_MAP
+from .const import CONF_JOURNEYS, DOMAIN, STATION_CODE_MAP, station_codes
 from .directions import ROUTES
-from .journeys import describe_route, plan_journey, trip_matches
-from .station_predictions import async_station_predictions
+from .journeys import candidate_journeys, describe_route, trip_matches
+from .station_predictions import (
+    async_station_predictions,
+    async_station_predictions_many,
+)
 
 
 def async_register(hass):
@@ -121,7 +124,7 @@ async def journey_arrivals(hass, connection, msg):
     connection.send_result(msg["id"], {"legs": legs})
 
 
-async def route_predictions(hass, api, route, coordinator=None):
+async def route_predictions(hass, api, route, coordinator=None, station_data=None):
     """Share filtering and prediction caches between saved and temporary routes."""
 
     async def predictions(index, leg):
@@ -142,6 +145,10 @@ async def route_predictions(hass, api, route, coordinator=None):
                     "arrivals": coordinator.data.arrivals,
                     "updated_at": coordinator.data.updated_at,
                 }
+            elif station_data is not None:
+                data = station_data.get(min(station_codes(leg["from"])))
+                if data is None:
+                    return result
             else:
                 data = await async_station_predictions(hass, api, leg["from"])
             plan = {
@@ -248,22 +255,45 @@ async def plan_trip(hass, connection, msg):
     api = planner_client(hass, connection, msg)
     if api is None:
         return
-    route = plan_journey(msg["origin"], msg["destination"])
-    if not route:
+    routes = candidate_journeys(msg["origin"], msg["destination"])
+    if not routes:
         connection.send_error(
             msg["id"], "invalid_route", "Choose two different Metro stations"
         )
         return
-    legs = await route_predictions(hass, api, route)
-    durations = [leg["ride_minutes"] for leg in legs]
-    connection.send_result(
-        msg["id"],
-        {
-            "route": route,
-            "route_description": describe_route(route),
-            "legs": legs,
-            "scheduled_ride_minutes": sum(durations)
-            if all(value is not None for value in durations)
-            else None,
-        },
+
+    def key(leg):
+        return (leg["from"], leg["to"], tuple(leg["lines"]))
+
+    unique = {key(leg): leg for route in routes for leg in route["legs"]}
+    station_data = await async_station_predictions_many(
+        hass, api, [leg["from"] for leg in unique.values()]
     )
+    shared = await route_predictions(
+        hass, api, {"legs": list(unique.values())}, station_data=station_data
+    )
+    by_leg = dict(zip(unique, shared, strict=True))
+    alternatives = []
+    for route in routes:
+        legs = [
+            {**by_leg[key(leg)], "index": index}
+            for index, leg in enumerate(route["legs"])
+        ]
+        durations = [leg["ride_minutes"] for leg in legs]
+        alternatives.append(
+            {
+                "id": "|".join(
+                    f"{leg['from']}>{leg['to']}:{','.join(leg['lines'])}"
+                    for leg in route["legs"]
+                ),
+                "route": route,
+                "route_description": describe_route(route),
+                "legs": legs,
+                "scheduled_ride_minutes": sum(durations)
+                if all(value is not None for value in durations)
+                else None,
+            }
+        )
+    # Clients rank these using the same live/timetable connection calculator as
+    # their journey card and the user's platform-change allowance.
+    connection.send_result(msg["id"], {**alternatives[0], "alternatives": alternatives})

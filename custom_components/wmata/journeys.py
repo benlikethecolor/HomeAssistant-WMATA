@@ -157,3 +157,59 @@ def trip_matches(arrival, plan):
         leg["to_name"] in [STATION_CODE_MAP[c] for c in path[1:]]
         for path in line_paths(arrival["line"], origin, destination)
     )
+
+
+@lru_cache(maxsize=256)
+def candidate_journeys(origin, destination):
+    """Enumerate loop-free rail routes with up to three platform changes."""
+    baseline = plan_journey(origin, destination)
+    if not baseline:
+        return ()
+    start, target = baseline["origin_name"], baseline["destination_name"]
+    junctions = sorted(transfer_stations() | {target})
+    found = {}
+
+    def visit(current, previous, visited, legs):
+        if len(legs) >= 4:
+            return
+        for name in junctions:
+            if name in visited:
+                continue
+            for leg in direct_legs(STATIONS_BY_NAME[current], STATIONS_BY_NAME[name]):
+                if set(previous).intersection(leg["lines"]):
+                    continue
+                path = line_paths(
+                    leg["lines"][0], leg["from"], leg["to"], scheduled=True
+                )[0]
+                following = [STATION_CODE_MAP[code] for code in path[1:]]
+                if visited.intersection(following) or (
+                    target in following and name != target
+                ):
+                    continue
+                trip = [*legs, leg]
+                if name == target:
+                    key = tuple(
+                        (value["from"], value["to"], tuple(value["lines"]))
+                        for value in trip
+                    )
+                    found[key] = {
+                        **baseline,
+                        "legs": trip,
+                        "transfers": len(trip) - 1,
+                        "stops": sum(value["stops"] for value in trip),
+                    }
+                else:
+                    visit(name, leg["lines"], visited | set(following), trip)
+
+    visit(start, (), {start}, [])
+    # Stable ordering is only for presentation fallback, never an arrival ranking.
+    return tuple(
+        sorted(
+            found.values(),
+            key=lambda trip: (
+                trip["transfers"],
+                trip["stops"],
+                tuple(leg["to"] for leg in trip["legs"]),
+            ),
+        )
+    )
