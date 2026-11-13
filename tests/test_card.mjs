@@ -1402,3 +1402,135 @@ test("planner refresh preserves the chosen origin train and the editor uses an e
     /transfer_buffer/,
   );
 });
+
+function scheduleDeparture(stamp, departure, arrival, line = "RD") {
+  return {
+    line,
+    line_name: line === "RD" ? "Red" : "Orange",
+    destination: line === "RD" ? "Glenmont" : "New Carrollton",
+    destination_code: line === "RD" ? "B11" : "D13",
+    status: "predicted",
+    prediction_source: "schedule",
+    departure_at: new Date(Date.parse(stamp) + departure * 60000).toISOString(),
+    station_arrival_at: new Date(
+      Date.parse(stamp) + departure * 60000,
+    ).toISOString(),
+    arrival_at: new Date(Date.parse(stamp) + arrival * 60000).toISOString(),
+  };
+}
+test("future transfers use labeled timetable estimates with exact trip arrival times and totals", async (t) => {
+  const f = await estimatedJourney(t, [2, 5]);
+  f.result.legs[1].scheduled_departures = [scheduleDeparture(f.stamp, 18, 29)];
+  f.card._render();
+  const plan = f.card._connectionPlan();
+  assert.equal(plan.arrival, Date.parse(f.stamp) + 29 * 60000);
+  assert.equal(plan.schedule_estimate, true);
+  assert.equal(plan.trip_minutes, 25);
+  assert.equal(plan.ride_minutes, 15);
+  assert.equal(plan.platform_minutes, 3);
+  assert.equal(plan.transfer_wait_minutes, 7);
+  assert.match(
+    f.root.querySelector(".journey-eta-heading").textContent,
+    /Schedule-based arrival/,
+  );
+  assert.match(
+    f.root.querySelector(".trip-total").textContent,
+    /25 min.*15 min riding.*3 min switching.*7 min waiting/,
+  );
+  assert.equal(f.root.querySelectorAll(".trip-itinerary li").length, 2);
+  assert.match(
+    f.root.querySelector(".trip-itinerary").textContent,
+    /Timetable estimate, not live/,
+  );
+  assert.match(
+    f.root.querySelector('[data-source="schedule"]').textContent,
+    /Schedule estimate.*possible connection/,
+  );
+});
+test("scheduled departures never replace live predictions within the reported window", async (t) => {
+  const f = await estimatedJourney(t, [12, 16, 20]);
+  f.result.legs[1].scheduled_departures = [
+    scheduleDeparture(f.stamp, 14, 22),
+    scheduleDeparture(f.stamp, 19, 27),
+    scheduleDeparture(f.stamp, 22, 30),
+  ];
+  f.card._render();
+  const arrivals = f.card._legArrivals(f.result.legs[1]);
+  assert.equal(
+    arrivals.filter((a) => a.prediction_source === "schedule").length,
+    1,
+  );
+  assert.equal(f.card._connectionPlan().legs[0].chosen.minutes, 12);
+  assert.equal(f.card._connectionPlan().schedule_estimate, false);
+  assert.match(
+    f.root.querySelector(".departure-clock").textContent,
+    /Live.*expected/,
+  );
+});
+test("a fully scheduled trip remains available when live data is stale and can select a later departure", async (t) => {
+  const f = await estimatedJourney(t, []);
+  const state = f.card._hass.states["sensor.wmata_g01_arrivals"];
+  state.attributes.arrivals = [];
+  state.attributes.updated_at = new Date(
+    Date.parse(f.stamp) - 180000,
+  ).toISOString();
+  f.result.legs[0].scheduled_departures = [
+    scheduleDeparture(f.stamp, 30, 34, "OR"),
+    scheduleDeparture(f.stamp, 40, 44, "OR"),
+  ];
+  f.result.legs[1].available = false;
+  f.result.legs[1].scheduled_departures = [
+    scheduleDeparture(f.stamp, 40, 49),
+    scheduleDeparture(f.stamp, 50, 59),
+  ];
+  f.card._render();
+  assert.equal(
+    f.card._connectionPlan().arrival,
+    Date.parse(f.stamp) + 49 * 60000,
+  );
+  f.root.querySelectorAll(".origin-choice")[1].click();
+  assert.equal(
+    f.card._connectionPlan().arrival,
+    Date.parse(f.stamp) + 59 * 60000,
+  );
+  assert.equal(f.card._connectionPlan().origin.prediction_source, "schedule");
+  assert.match(
+    f.root.querySelector(".journey-eta").textContent,
+    /Schedule-based arrival/,
+  );
+});
+test("planner and result share the dashboard appearance and Daylight day-night state", async (t) => {
+  const f = await plannerFixture(t, undefined, { appearance: "daylight" });
+  f.planner.hass = {
+    ...f.planner._hass,
+    themes: { darkMode: true },
+    states: {
+      ...f.planner._hass.states,
+      "sun.sun": { state: "above_horizon" },
+    },
+  };
+  await planQuickTrip(f);
+  assert.equal(f.planner.dataset.appearance, "daylight");
+  assert.equal(f.planner.dataset.day, "true");
+  assert.equal(f.planner._board.dataset.appearance, "daylight");
+  assert.equal(f.planner._board.dataset.day, "true");
+  assert.match(
+    f.planner._board.shadowRoot.querySelector(".eyebrow").textContent,
+    /TRIP PLAN/,
+  );
+  f.planner.hass = {
+    ...f.planner._hass,
+    states: {
+      ...f.planner._hass.states,
+      "sun.sun": { state: "below_horizon" },
+    },
+  };
+  assert.equal(f.planner.dataset.day, "false");
+  assert.equal(f.planner._board.dataset.day, "false");
+  for (const appearance of ["orbit", "bento"]) {
+    f.planner.setConfig({ entity: "sensor.wmata_g01_arrivals", appearance });
+    await planQuickTrip(f);
+    assert.equal(f.planner.dataset.appearance, appearance);
+    assert.equal(f.planner._board.dataset.appearance, appearance);
+  }
+});

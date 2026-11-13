@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import math
+import zipfile
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any
 
 import aiohttp
 
 from .const import URL
+from .schedules import ZONE, RailSchedule
 
 
 class APIAuthError(Exception):
@@ -37,6 +41,10 @@ class RequestState:
     rail_times: dict[tuple[str, str], float] | None = None
     rail_times_expiry: float = 0
     rail_times_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    schedule: RailSchedule | None = None
+    schedule_expiry: float = 0
+    schedule_date: str = ""
+    schedule_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class WmataApi:
@@ -46,6 +54,7 @@ class WmataApi:
         self, session: aiohttp.ClientSession, api_key: str, *, hass=None
     ) -> None:
         self.session = session
+        self._hass = hass
         self.headers = {"api_key": api_key}
         if hass is None:
             self._state = RequestState()
@@ -57,14 +66,32 @@ class WmataApi:
     async def get(self, path: str, **params: str) -> dict[str, Any]:
         """Request JSON without exposing credentials or response bodies in errors."""
         async with self._state.lock:
-            loop = asyncio.get_running_loop()
-            if self._state.blocked_until > loop.time():
-                raise APIConnectionError("WMATA API rate limit cooldown is active")
-            delay = self._state.next_request - loop.time()
-            if delay > 0:
-                await asyncio.sleep(delay)
-            self._state.next_request = loop.time() + 0.6
+            await self._pace()
             return await self._request(path, params)
+
+    async def _pace(self):
+        loop = asyncio.get_running_loop()
+        if self._state.blocked_until > loop.time():
+            raise APIConnectionError("WMATA API rate limit cooldown is active")
+        delay = self._state.next_request - loop.time()
+        if delay > 0:
+            await asyncio.sleep(delay)
+        self._state.next_request = loop.time() + 0.6
+
+    def _check_status(self, response):
+        if response.status in (401, 403):
+            raise APIAuthError("WMATA rejected the API key")
+        if response.status == 429:
+            try:
+                retry_after = float(response.headers.get("Retry-After", "60"))
+            except (ValueError, TypeError):
+                retry_after = 60
+            self._state.blocked_until = asyncio.get_running_loop().time() + max(
+                1, min(retry_after, 300)
+            )
+            raise APIConnectionError("WMATA API rate limit exceeded; retrying later")
+        if response.status != 200:
+            raise APIConnectionError(f"WMATA returned HTTP {response.status}")
 
     async def _request(self, path: str, params: dict[str, str]) -> dict[str, Any]:
         try:
@@ -74,21 +101,7 @@ class WmataApi:
                 params=params,
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as response:
-                if response.status in (401, 403):
-                    raise APIAuthError("WMATA rejected the API key")
-                if response.status == 429:
-                    try:
-                        retry_after = float(response.headers.get("Retry-After", "60"))
-                    except (ValueError, TypeError):
-                        retry_after = 60
-                    self._state.blocked_until = asyncio.get_running_loop().time() + max(
-                        1, min(retry_after, 300)
-                    )
-                    raise APIConnectionError(
-                        "WMATA API rate limit exceeded; retrying later"
-                    )
-                if response.status != 200:
-                    raise APIConnectionError(f"WMATA returned HTTP {response.status}")
+                self._check_status(response)
                 data = await response.json()
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             raise APIConnectionError("Unable to read WMATA API response") from err
@@ -179,6 +192,57 @@ class WmataApi:
             self._state.rail_times = times
             self._state.rail_times_expiry = now + 86400
             return times
+
+    async def _download_rail_schedule(self):
+        async with self._state.lock:
+            await self._pace()
+            try:
+                async with self.session.get(
+                    f"{URL}/gtfs/rail-gtfs-static.zip",
+                    headers=self.headers,
+                    timeout=aiohttp.ClientTimeout(total=40),
+                ) as response:
+                    self._check_status(response)
+                    data = bytearray()
+                    async for chunk in response.content.iter_chunked(65536):
+                        data.extend(chunk)
+                        if len(data) > 20000000:
+                            raise APIConnectionError(
+                                "Rail timetable exceeds size limit"
+                            )
+                    return bytes(data)
+            except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+                raise APIConnectionError("Unable to download rail timetable") from err
+
+    async def rail_schedule(self):
+        """Cache official schedules per subscription; parsing never blocks HA."""
+        async with self._state.schedule_lock:
+            now = asyncio.get_running_loop().time()
+            day = datetime.now(UTC).astimezone(ZONE).date().isoformat()
+            if now < self._state.schedule_expiry and self._state.schedule_date == day:
+                return self._state.schedule
+            self._state.schedule_date = day
+            self._state.schedule_expiry = now + 300
+            content = await self._download_rail_schedule()
+            try:
+                if self._hass is not None:
+                    schedule = await self._hass.async_add_executor_job(
+                        RailSchedule, content
+                    )
+                else:
+                    schedule = await asyncio.to_thread(RailSchedule, content)
+            except (
+                ValueError,
+                KeyError,
+                OSError,
+                UnicodeError,
+                zipfile.BadZipFile,
+                csv.Error,
+            ) as err:
+                raise APIConnectionError("Unable to read rail timetable") from err
+            self._state.schedule = schedule
+            self._state.schedule_expiry = now + 21600
+            return schedule
 
     async def buses(self, stop: str) -> list[dict[str, Any]]:
         return self._items(

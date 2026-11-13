@@ -1,6 +1,7 @@
 """Authenticated on-demand predictions for train maps and saved journeys."""
 
 import asyncio
+from datetime import UTC, datetime
 
 import voluptuous as vol
 from homeassistant.auth.permissions.const import POLICY_READ
@@ -167,6 +168,21 @@ async def route_predictions(hass, api, route, coordinator=None):
         times = None
     for result, leg in zip(legs, route["legs"], strict=True):
         result["ride_minutes"] = ride_minutes(leg, times)
+    try:
+        schedule = await api.rail_schedule()
+    except (APIAuthError, APIConnectionError):
+        schedule = None
+    now = datetime.now(UTC)
+    if schedule:
+        scheduled = await hass.async_add_executor_job(
+            lambda: [schedule.departures(leg, now) for leg in route["legs"]]
+        )
+    else:
+        scheduled = [[] for leg in legs]
+    for result, departures in zip(legs, scheduled, strict=True):
+        result["scheduled_departures"] = departures
+        if result["ride_minutes"] is None and departures:
+            result["ride_minutes"] = departures[0]["ride_minutes"]
     return legs
 
 

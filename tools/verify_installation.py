@@ -38,7 +38,7 @@ async def verify(scenario):
         loader.async_setup(hass)
         fixture = json.loads((ROOT / "tests/fixtures/wmata_api.json").read_text())
         import custom_components.wmata
-        from custom_components.wmata.api import WmataApi
+        from custom_components.wmata.api import APIConnectionError, WmataApi
 
         assert Path(custom_components.wmata.__file__).is_relative_to(config_dir)
 
@@ -81,7 +81,14 @@ async def verify(scenario):
             return fixture[key]
 
         try:
-            with patch.object(WmataApi, "_request", response):
+            with (
+                patch.object(WmataApi, "_request", response),
+                patch.object(
+                    WmataApi,
+                    "_download_rail_schedule",
+                    side_effect=APIConnectionError("Timetable not in fixture"),
+                ),
+            ):
                 result = await async_from_config_dict(
                     {
                         "homeassistant": {

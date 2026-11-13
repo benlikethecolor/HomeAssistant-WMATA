@@ -18,6 +18,7 @@ def fixture(route=None):
     route = route or plan_journey("C04", "B35")
     api = SimpleNamespace(
         _state=object(),
+        rail_schedule=AsyncMock(return_value=None),
         rail_times=AsyncMock(
             return_value={("C04", "C03"): 2, ("C03", "C02"): 1, ("C02", "C01"): 1}
         ),
@@ -105,6 +106,34 @@ def fixture(route=None):
 
 
 class TransferPredictionsTest(unittest.IsolatedAsyncioTestCase):
+    async def test_timetable_can_supply_rides_when_travel_time_endpoint_is_down(self):
+        hass, entry, entity, registry, connection, api = fixture(
+            plan_journey("C04", "A01")
+        )
+        api.rail_times.side_effect = APIConnectionError("offline")
+        api.rail_schedule.return_value = SimpleNamespace(
+            departures=lambda leg, now: [
+                {"ride_minutes": 5, "prediction_source": "schedule"}
+            ]
+        )
+
+        async def execute(func, *args):
+            return func(*args)
+
+        hass.async_add_executor_job = execute
+        with patch(
+            "custom_components.wmata.websocket.er.async_get", return_value=registry
+        ):
+            await inspect.unwrap(journey_arrivals)(
+                hass, connection, {"id": 1, "entity_id": "sensor.trip"}
+            )
+        leg = connection.send_result.call_args.args[1]["legs"][0]
+        self.assertTrue(leg["available"])
+        self.assertEqual(leg["ride_minutes"], 5)
+        self.assertEqual(
+            leg["scheduled_departures"][0]["prediction_source"], "schedule"
+        )
+
     async def test_direct_journey_returns_ride_time_without_transfer_requests(self):
         hass, entry, entity, registry, connection, api = fixture(
             plan_journey("C04", "A01")
