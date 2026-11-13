@@ -1,5 +1,6 @@
 name: Integration tests
 on:
+  workflow_call:
   workflow_dispatch:
   push:
   pull_request:
@@ -23,6 +24,17 @@ jobs:
           docker run --rm -v "$PWD:/work" -w /work --entrypoint python \
             "ghcr.io/home-assistant/home-assistant:$HA_VERSION" \
             -m unittest discover -s tests -v
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: ruff format --check .
   frontend:
     runs-on: ubuntu-latest
     steps:
@@ -32,4 +44,5 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run format:check
       - run: npm test

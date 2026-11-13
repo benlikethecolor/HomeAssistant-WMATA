@@ -1,0 +1,90 @@
+name: Prepare release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version tag matching manifest.json (for example v4.6.3)
+        required: true
+        type: string
+      create_draft:
+        description: Create a draft release for an existing tag on main
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
+  package:
+    needs: tests
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.prepare.outputs.tag }}
+      version: ${{ steps.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Check tag, versions, and release ancestry
+        id: prepare
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          CREATE_DRAFT: ${{ github.event_name == 'push' || inputs.create_draft }}
+        run: |
+          python tools/prepare_release.py --tag "$RELEASE_TAG" --output-dir dist > /tmp/release.json
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          data = json.loads(Path('/tmp/release.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for key in ('tag', 'version'):
+                  output.write(f'{key}={data[key]}\n')
+          PY
+          if [ "$CREATE_DRAFT" = "true" ]; then
+            test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          fi
+      - name: Validate with hassfest
+        uses: home-assistant/actions/hassfest@master
+      - name: Validate with HACS
+        uses: hacs/action@main
+        with:
+          category: integration
+          comment: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wmata-release
+          path: dist/
+          if-no-files-found: error
+  draft:
+    if: github.event_name == 'push' || inputs.create_draft
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wmata-release
+          path: dist
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.package.outputs.tag }}
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          gh release create "$RELEASE_TAG" "dist/wmata-$VERSION.zip" \
+            --verify-tag --draft --title "WMATA $VERSION" \
+            --notes-file dist/release-notes.md --generate-notes

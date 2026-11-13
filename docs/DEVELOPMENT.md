@@ -15,12 +15,24 @@ The installation tests extract a release ZIP into a temporary HA config and exer
 For the card tests and a manual-install ZIP:
 
 ~~~sh
+python3 -m pip install -r requirements-dev.txt
+ruff check .
+ruff format --check .
 npm ci
+npm run format:check
 npm test
 python3 tools/build_release.py --output /tmp/wmata.zip
 ~~~
 
 CI runs the tests on HA 2026.11.1 and stable, plus hassfest and HACS validation. Before releasing, also try setup and the cards against a live WMATA subscription.
+
+## Releases and dependency updates
+
+After merging to main, update `manifest.json` and `CARD_VERSION` together, then push a matching tag such as `v4.6.3`. **Prepare release** runs the tests and validators, builds a ZIP, and creates a draft release with upgrade notes. Review the draft before publishing it. Tags must point to a commit on main.
+
+For a build without a release, run the workflow manually with **create_draft** unchecked. To create a draft manually, run it on the existing version tag with **create_draft** checked. The tag, manifest, and card versions must match.
+
+Dependabot checks Actions, npm tools, and the Python linter weekly after this configuration reaches the default branch. Bundled Leaflet is updated manually; keep its license and run the card tests when replacing it.
 
 ## Rail directions
 

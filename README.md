@@ -129,7 +129,7 @@ If you previously added both codes for a transfer station, both entries will now
 - **Blank basemap:** check whether your browser can reach the tile provider.
 - **Unavailable sensor:** check **Settings → System → Logs** for WMATA errors. You can change the key through **Reconfigure** and the polling interval through **Configure → Polling settings**. The default is 30 seconds; increase it if you're hitting API limits.
 
-When reporting an issue, include your HA and integration versions, station or stop, and relevant logs. Leave API keys out of the report.
+When reporting an issue, include your HA and integration versions, station or stop, and relevant logs. You can download diagnostics from the WMATA entry’s menu under **Settings → Devices & services**. Diagnostics include status and counts, leaving out keys, selected locations, and journey names. Review any logs or screenshots before attaching them.
 
 For tests, packaging, and map maintenance, see [Development](docs/DEVELOPMENT.md).
 

@@ -10,6 +10,7 @@ REQUIRED = {
     "__init__.py",
     "config_flow.py",
     "sensor.py",
+    "diagnostics.py",
     "directions.py",
     "websocket.py",
     "geo_shapes.json",

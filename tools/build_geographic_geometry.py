@@ -1,6 +1,7 @@
 import argparse
 import json
 import math
+import runpy
 from itertools import pairwise
 from pathlib import Path
 
@@ -85,7 +86,10 @@ for key in json.loads(args.schematic_shapes.read_text()):
             i += 1
         t = (distance - ds[i]) / (ds[i + 1] - ds[i]) if ds[i + 1] > ds[i] else 0
         result.append(
-            [round(x + (y - x) * t, 7) for x, y in zip(curve[i], curve[i + 1])]
+            [
+                round(x + (y - x) * t, 7)
+                for x, y in zip(curve[i], curve[i + 1], strict=True)
+            ]
         )
     shapes[key] = result
 (ROOT / "geo_shapes.json").write_text(json.dumps(shapes, separators=(",", ":")))
@@ -104,8 +108,6 @@ for key in json.loads(args.schematic_shapes.read_text()):
         separators=(",", ":"),
     )
 )
-import runpy
-
 anchors = runpy.run_path(str(args.anchors))["STATIONS"]
 route_file = ROOT / "www/geo_routes.json"
 data = json.loads(route_file.read_text())

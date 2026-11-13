@@ -186,6 +186,14 @@ async def verify(scenario):
                         devices, rail.entry_id
                     )
                 )
+                from custom_components.wmata.diagnostics import (
+                    async_get_config_entry_diagnostics,
+                )
+
+                diagnostics = await async_get_config_entry_diagnostics(hass, rail)
+                assert diagnostics["coordinator_loaded"]
+                assert diagnostics["arrivals"]["count"] == 2
+                assert "fixture-key" not in json.dumps(diagnostics)
                 from homeassistant.components import frontend
 
                 modules = hass.data[frontend.DATA_EXTRA_MODULE_URL].urls
