@@ -41,6 +41,7 @@ const validAppearance = (value) =>
       }),
     );
   const STYLE = `
+    .origin-choice,.origin-reset{font:inherit;font-size:11px;border:1px solid var(--divider-color,#ccc);border-radius:8px;padding:5px 8px;background:transparent;color:inherit;cursor:pointer;margin-top:7px}.origin-choice[aria-pressed=true]{border-color:var(--primary-color,#0076be);background:color-mix(in srgb,var(--primary-color,#0076be) 12%,transparent)}.origin-choice:disabled{opacity:.5;cursor:default}.origin-selection{padding:0 22px 12px;font-size:12px;color:var(--secondary-text-color,#64717b)}
     .journey-eta{margin:0 22px 16px;padding:12px;border:1px solid var(--divider-color,#e2e7eb);border-radius:12px}.journey-eta-heading{font-size:12px;color:var(--secondary-text-color,#64717b);margin-bottom:5px}.journey-eta-time{font-size:22px;font-weight:650;line-height:1.4}.journey-eta-details{font-size:11px;line-height:1.6;color:var(--secondary-text-color,#64717b);margin-top:4px}
     .connection-summary{font-size:12px;line-height:1.6;margin:0 0 10px;color:var(--secondary-text-color,#64717b)}.connection-label{font-size:11px;font-weight:600;margin-top:5px}.arrival[data-connection=likely]{background:color-mix(in srgb,var(--success-color,#278057) 12%,transparent);border-radius:8px;padding-left:8px;padding-right:8px}.arrival[data-connection=likely] .connection-label{color:var(--success-color,#278057)}.arrival[data-connection=early] .connection-label{color:var(--secondary-text-color,#64717b)}
     .leg-heading{padding:0 22px 12px;font-size:13px;font-weight:600;line-height:1.5}.journey-transfers{border-top:1px solid var(--divider-color,#e2e7eb);padding:16px 22px}.transfer-note{font-size:12px;line-height:1.5;color:var(--secondary-text-color,#64717b);margin:0 0 14px}.transfer-station{margin-top:16px}.transfer-title{font-size:14px;font-weight:600;line-height:1.5;margin:0 0 8px}.transfer-status,.transfer-updated{font-size:11px;color:var(--secondary-text-color,#64717b);line-height:1.5}.transfer-updated{margin-top:8px}.transfer-updated[data-stale=true]{color:var(--warning-color,#9a660d)}
@@ -123,6 +124,7 @@ const validAppearance = (value) =>
         );
       if (this._config?.entity !== config.entity) {
         this._stopTransferPolling();
+        this._originSelection = null;
         this._line = "all";
         this._destination = "all";
       }
@@ -223,6 +225,61 @@ const validAppearance = (value) =>
       return this._hass?.states?.[this._config?.entity]?.attributes
         ?.journey_route;
     }
+    _routeKey() {
+      return JSON.stringify([
+        this._config?.entity,
+        this._transferRoute()?.legs?.map((leg) => [leg.from, leg.to]),
+      ]);
+    }
+    _originSignature(arrival) {
+      return JSON.stringify([
+        arrival.line,
+        destinationKey(arrival),
+        arrival.group || "",
+        arrival.cars || "",
+      ]);
+    }
+    _selectOrigin(arrival) {
+      const state = this._hass.states[this._config.entity];
+      this._originSelection = {
+        route: this._routeKey(),
+        signature: this._originSignature(arrival),
+        departure:
+          Date.parse(state.attributes.updated_at) + arrival.minutes * 60000,
+      };
+      this._render();
+    }
+    setJourneyPreview(hass, result, config) {
+      this._preview = true;
+      const oldRoute = this._routeKey();
+      this.setConfig({ ...config, entity: "sensor.wmata_trip_preview" });
+      this._transferData = result.legs;
+      this._transferError = false;
+      const origin = result.legs[0];
+      this.hass = {
+        ...hass,
+        states: {
+          ...hass.states,
+          "sensor.wmata_trip_preview": {
+            state: String(origin.arrivals[0]?.minutes ?? "unknown"),
+            attributes: {
+              schema_version: 1,
+              board_type: "journey",
+              service_type: "train",
+              journey_name: "To " + result.route.destination_name,
+              journey_route: result.route,
+              route_description: result.route_description,
+              arrivals: origin.arrivals,
+              updated_at: origin.updated_at,
+            },
+          },
+        },
+      };
+      if (oldRoute !== this._routeKey()) {
+        this._originSelection = null;
+        this._render();
+      }
+    }
     _stopTransferPolling() {
       clearInterval(this._transferTimer);
       this._transferTimer = null;
@@ -233,6 +290,11 @@ const validAppearance = (value) =>
       this._transferError = false;
     }
     _syncTransferPolling() {
+      if (this._preview) {
+        clearInterval(this._transferTimer);
+        this._transferTimer = null;
+        return;
+      }
       const route = this._transferRoute();
       if (
         !this.isConnected ||
@@ -360,7 +422,7 @@ const validAppearance = (value) =>
         if (
           this._transferError ||
           (live && !live.available) ||
-          typeof this._hass?.callWS !== "function"
+          (!this._preview && typeof this._hass?.callWS !== "function")
         ) {
           station.append(
             element(
@@ -479,7 +541,11 @@ const validAppearance = (value) =>
           element(
             "div",
             "journey-eta-details",
-            "Based on the next matching origin train and scheduled ride times. Delays can change this estimate.",
+            "Based on " +
+              (this._originSelection
+                ? "your selected origin train"
+                : "the next matching origin train") +
+              " and scheduled ride times. Delays can change this estimate.",
           ),
         );
       } else {
@@ -539,9 +605,30 @@ const validAppearance = (value) =>
               )
               .sort((a, b) => a.time - b.time)
           : [];
+      if (this._originSelection?.route !== this._routeKey())
+        this._originSelection = null;
+      let selected = origins[0];
+      if (this._originSelection) {
+        const matches = origins
+          .filter(
+            (value) =>
+              this._originSignature(value.arrival) ===
+              this._originSelection.signature,
+          )
+          .map((value) => ({
+            ...value,
+            difference: Math.abs(value.time - this._originSelection.departure),
+          }))
+          .sort((a, b) => a.difference - b.difference);
+        selected =
+          matches[0]?.difference <= 90000 &&
+          matches[0]?.difference !== matches[1]?.difference
+            ? matches[0]
+            : undefined;
+      }
       const result = {
-        origin: origins[0]?.arrival,
-        departure: origins[0] ? Math.max(now, origins[0].time) : null,
+        origin: selected?.arrival,
+        departure: selected ? Math.max(now, selected.time) : null,
         legs: [],
       };
       let boarded = result.departure;
@@ -597,7 +684,9 @@ const validAppearance = (value) =>
         result.arrival_reason = this._transferError
           ? "Journey predictions are temporarily unavailable."
           : !result.origin
-            ? "No fresh origin departure is available."
+            ? this._originSelection
+              ? "The selected train is no longer predicted. Choose another train or use the next train."
+              : "No fresh origin departure is available."
             : result.legs.some((leg) => leg.stale)
               ? "Waiting for fresh transfer predictions."
               : result.legs.some((leg) => leg.ready && !leg.chosen)
@@ -793,6 +882,25 @@ const validAppearance = (value) =>
             destinationKey(a) === this._destination),
       );
       const shown = filtered.slice(0, this._config.max_rows);
+      const journey = attrs.journey_route?.legs?.length > 0;
+      const chosenOrigin = journey ? this._connectionPlan().origin : null;
+      if (journey && this._originSelection) {
+        const selection = element(
+          "div",
+          "origin-selection",
+          chosenOrigin
+            ? "Using your selected origin train. "
+            : "Your selected train is no longer available. ",
+        );
+        const reset = element("button", "origin-reset", "Use next train");
+        reset.type = "button";
+        reset.onclick = () => {
+          this._originSelection = null;
+          this._render();
+        };
+        selection.append(reset);
+        card.append(selection);
+      }
       if (shown.length) {
         const columns = element("div", "columns");
         columns.append(
@@ -803,7 +911,8 @@ const validAppearance = (value) =>
         const rows = element("div", "rows");
         rows.setAttribute("role", "list");
         rows.setAttribute("aria-label", "Upcoming arrivals");
-        for (const arrival of shown) rows.append(this._row(arrival));
+        for (const arrival of shown)
+          rows.append(this._row(arrival, journey, arrival === chosenOrigin));
         card.append(rows);
       } else
         card.append(
@@ -827,7 +936,7 @@ const validAppearance = (value) =>
       card.append(footer);
       this._updateFreshness();
     }
-    _row(a) {
+    _row(a, originChoice = false, selected = false) {
       const row = element("div", "arrival");
       row.setAttribute("role", "listitem");
       const key = routeKey(a);
@@ -848,6 +957,28 @@ const validAppearance = (value) =>
       if (a.vehicle_id) details.push(`Bus ${a.vehicle_id}`);
       if (details.length)
         info.append(element("div", "details", details.join(" · ")));
+      if (originChoice) {
+        const choose = element(
+          "button",
+          "origin-choice",
+          selected
+            ? this._originSelection
+              ? "Selected train"
+              : "Using next train"
+            : "Use this train",
+        );
+        choose.type = "button";
+        choose.setAttribute("aria-pressed", String(selected));
+        choose.setAttribute(
+          "aria-label",
+          `Use ${label} to ${a.destination || "destination unavailable"} ${Number.isFinite(a.minutes) ? "in " + a.minutes + " minutes" : "with no estimate"}`,
+        );
+        choose.disabled =
+          !Number.isFinite(a.minutes) ||
+          !["predicted", "boarding", "arriving"].includes(a.status);
+        choose.onclick = () => this._selectOrigin(a);
+        info.append(choose);
+      }
       const eta = element("div", "eta");
       if (a.status === "boarding" || a.status === "arriving") {
         eta.append(
@@ -1035,6 +1166,377 @@ const validAppearance = (value) =>
         "Live Metrorail and Metrobus arrivals, with line and destination filters.",
       preview: true,
     });
+  let plannerCount = 0;
+  class WmataTripPlanner extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: "open" });
+      this._listId = `wmata-stations-${++plannerCount}`;
+    }
+    setConfig(config) {
+      if (!config?.entity?.startsWith("sensor."))
+        throw new Error(
+          "Choose a WMATA rail board or train map for API access.",
+        );
+      if (
+        config.appearance !== undefined &&
+        !validAppearance(config.appearance)
+      )
+        throw new Error("Choose a supported appearance preset.");
+      if (
+        config.transfer_buffer !== undefined &&
+        (!Number.isInteger(config.transfer_buffer) ||
+          config.transfer_buffer < 1 ||
+          config.transfer_buffer > 30)
+      )
+        throw new Error("transfer_buffer must be an integer between 1 and 30.");
+      for (const key of ["origin", "destination", "title"])
+        if (config[key] !== undefined && typeof config[key] !== "string")
+          throw new Error(`${key} must be a station name or text.`);
+      if (this._config?.entity !== config.entity) {
+        this._stations = null;
+        this._catalogPending = false;
+        this._catalogGeneration = (this._catalogGeneration || 0) + 1;
+      }
+      this._generation = (this._generation || 0) + 1;
+      this._pending = null;
+      this._query = null;
+      this._config = { appearance: "native", transfer_buffer: 3, ...config };
+      this._build();
+      this._loadStations();
+    }
+    set hass(hass) {
+      const previous = this._hass;
+      this._hass = hass;
+      this._loadStations();
+      if (
+        this._result &&
+        this._board &&
+        (previous?.themes !== hass.themes ||
+          previous?.states?.["sun.sun"] !== hass.states?.["sun.sun"])
+      )
+        this._showResult(this._result);
+    }
+    connectedCallback() {
+      this._loadStations();
+      if (!this._timer) this._timer = setInterval(() => this._refresh(), 30000);
+    }
+    disconnectedCallback() {
+      clearInterval(this._timer);
+      this._timer = null;
+      this._generation = (this._generation || 0) + 1;
+      this._catalogGeneration = (this._catalogGeneration || 0) + 1;
+      this._pending = null;
+      this._catalogPending = false;
+    }
+    getCardSize() {
+      return 5 + (this._board?.getCardSize() || 0);
+    }
+    getGridOptions() {
+      return { columns: 12, min_columns: 6 };
+    }
+    static getConfigElement() {
+      return document.createElement("wmata-trip-planner-editor");
+    }
+    static getStubConfig(hass) {
+      const entity = Object.keys(hass?.states || {}).find((id) => {
+        const a = hass.states[id].attributes;
+        return (
+          (a.board_type === "station" && a.service_type === "train") ||
+          (Array.isArray(a.trains) && Array.isArray(a.paths))
+        );
+      });
+      return {
+        type: "custom:wmata-trip-planner",
+        entity: entity || "",
+        appearance: "native",
+      };
+    }
+    _build() {
+      this.shadowRoot.innerHTML = `<style>
+        :host{display:block;color:var(--primary-text-color,#202b35);font-family:var(--ha-font-family-body,Roboto,system-ui,sans-serif)}
+        ha-card{display:block;border:var(--ha-card-border-width,1px) solid var(--ha-card-border-color,var(--divider-color,#ddd));border-radius:var(--ha-card-border-radius,12px);background:var(--ha-card-background,var(--card-background-color,#fff));box-shadow:var(--ha-card-box-shadow,none)}
+        .planner-form{padding:16px}.planner-title{font-size:20px;font-weight:400;margin:0 0 12px}.fields{display:flex;gap:12px;flex-wrap:wrap}label{flex:1;min-width:150px;font-size:12px;line-height:1.8;color:var(--secondary-text-color,#64717b)}input{box-sizing:border-box;width:100%;font:inherit;font-size:14px;padding:11px 10px;border:1px solid var(--divider-color,#ccc);border-radius:8px;background:var(--secondary-background-color,#f4f6f7);color:var(--primary-text-color,#222)}
+        .actions{display:flex;gap:8px;margin-top:12px}button{font:inherit;font-size:13px;border:1px solid var(--divider-color,#ccc);border-radius:9px;padding:9px 14px;background:transparent;color:inherit;cursor:pointer}button[type=submit]{background:var(--primary-color,#0076be);color:var(--text-primary-color,#fff);border-color:transparent}button:focus-visible,input:focus-visible{outline:2px solid var(--primary-color,#0076be);outline-offset:2px}.status,.scheduled{font-size:12px;line-height:1.6;margin-top:12px;color:var(--secondary-text-color,#64717b)}.result{margin-top:12px}.result:empty{display:none}
+      </style>`;
+      const card = element("ha-card");
+      const form = element("form", "planner-form");
+      form.append(
+        element(
+          "h2",
+          "planner-title",
+          this._config.title || "Metro trip planner",
+        ),
+      );
+      const fields = element("div", "fields");
+      for (const [key, label] of [
+        ["origin", "From"],
+        ["destination", "To"],
+      ]) {
+        const wrapper = element("label", null, label);
+        const input = element("input");
+        input.type = "text";
+        input.setAttribute("aria-label", label + " station");
+        input.setAttribute("list", this._listId);
+        input.placeholder = "Search Metro stations";
+        input.autocomplete = "off";
+        input.value = this._config[key] || "";
+        input.addEventListener("input", () => this._invalidate());
+        this["_" + key + "Input"] = input;
+        wrapper.append(input);
+        fields.append(wrapper);
+      }
+      this._list = element("datalist");
+      this._list.id = this._listId;
+      const actions = element("div", "actions");
+      const submit = element("button", null, "Plan trip");
+      submit.type = "submit";
+      const swap = element("button", null, "Swap stations");
+      swap.type = "button";
+      swap.onclick = () => {
+        [this._originInput.value, this._destinationInput.value] = [
+          this._destinationInput.value,
+          this._originInput.value,
+        ];
+        this._invalidate();
+        this._plan();
+      };
+      actions.append(submit, swap);
+      this._status = element("div", "status", "Loading station names…");
+      this._status.setAttribute("role", "status");
+      this._scheduled = element("div", "scheduled");
+      form.append(fields, this._list, actions, this._status, this._scheduled);
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        this._plan();
+      });
+      card.append(form);
+      this._resultHost = element("div", "result");
+      this._board = null;
+      this._result = null;
+      this.shadowRoot.append(card, this._resultHost);
+      if (this._stations) this._fillStations();
+    }
+    _invalidate() {
+      this._generation = (this._generation || 0) + 1;
+      this._pending = null;
+      this._query = null;
+      this._result = null;
+      this._board?.remove();
+      this._board = null;
+      this._scheduled.textContent = "";
+      this._status.textContent = "Choose stations, then plan your trip.";
+    }
+    async _loadStations() {
+      if (
+        !this.isConnected ||
+        !this._config ||
+        !this._hass?.callWS ||
+        this._catalogPending
+      )
+        return;
+      if (this._stations) return;
+      const generation = this._catalogGeneration;
+      this._catalogPending = true;
+      try {
+        const result = await this._hass.callWS({
+          type: "wmata/planner_stations",
+          entity_id: this._config.entity,
+        });
+        if (!this.isConnected || generation !== this._catalogGeneration) return;
+        if (!Array.isArray(result.stations)) throw new Error("Missing catalog");
+        this._stations = result.stations;
+        this._fillStations();
+      } catch {
+        if (this.isConnected && generation === this._catalogGeneration)
+          this._status.textContent =
+            "Station list unavailable. Check the selected WMATA rail board or map, then try Plan trip again.";
+      } finally {
+        if (generation === this._catalogGeneration)
+          this._catalogPending = false;
+      }
+    }
+    _fillStations() {
+      this._list.replaceChildren();
+      for (const station of this._stations) {
+        const option = element("option");
+        option.value = station.name;
+        option.label = station.lines
+          .map((line) => COLORS[line]?.[0] || line)
+          .join(" / ");
+        this._list.append(option);
+      }
+      this._status.textContent =
+        "Choose stations, then plan your trip. Routes prefer fewer transfers, then fewer stops.";
+    }
+    _resolve(text) {
+      const normalize = (value) =>
+        value
+          .toLocaleLowerCase()
+          .normalize("NFKD")
+          .replace(/[^a-z0-9]/g, "");
+      const value = normalize(text);
+      if (!value) return null;
+      const exact = this._stations?.find(
+        (s) => normalize(s.name) === value || normalize(s.code) === value,
+      );
+      const matches =
+        this._stations?.filter((s) => normalize(s.name).includes(value)) || [];
+      return exact || (matches.length === 1 ? matches[0] : null);
+    }
+    async _plan() {
+      if (!this._stations) {
+        await this._loadStations();
+        if (!this._stations) return;
+      }
+      const from = this._resolve(this._originInput.value),
+        to = this._resolve(this._destinationInput.value);
+      if (!from || !to || from.code === to.code) {
+        this._status.textContent =
+          "Choose two different stations from the suggestions. Use a full station name if several match.";
+        return;
+      }
+      this._originInput.value = from.name;
+      this._destinationInput.value = to.name;
+      this._query = { origin: from.code, destination: to.code };
+      await this._refresh();
+    }
+    async _refresh() {
+      if (
+        !this.isConnected ||
+        !this._query ||
+        document.visibilityState === "hidden"
+      )
+        return;
+      const key = JSON.stringify([this._config.entity, this._query]);
+      if (this._pending === key) return;
+      const generation = this._generation;
+      this._pending = key;
+      this._status.textContent = "Updating route and departures…";
+      try {
+        const result = await this._hass.callWS({
+          type: "wmata/plan_trip",
+          entity_id: this._config.entity,
+          ...this._query,
+        });
+        if (!this.isConnected || generation !== this._generation) return;
+        if (!result.route?.legs?.length || !Array.isArray(result.legs))
+          throw new Error("Invalid route");
+        this._result = result;
+        this._showResult(result);
+        this._status.textContent =
+          "Live predictions refresh every 30 seconds while this card is open.";
+      } catch {
+        if (this.isConnected && generation === this._generation) {
+          this._result = null;
+          this._status.textContent =
+            "Trip predictions unavailable. Retrying shortly.";
+          if (this._board) {
+            this._board._transferError = true;
+            this._board._renderTransfers();
+          }
+        }
+      } finally {
+        if (generation === this._generation) this._pending = null;
+      }
+    }
+    _showResult(result) {
+      if (!this._board) {
+        this._board = document.createElement("wmata-station-card");
+        this._resultHost.append(this._board);
+      }
+      this._board.setJourneyPreview(this._hass, result, {
+        appearance: this._config.appearance,
+        transfer_buffer: this._config.transfer_buffer,
+        max_rows: 8,
+        show_filters: false,
+      });
+      const changes = result.route.legs.length - 1;
+      this._scheduled.textContent = Number.isFinite(
+        result.scheduled_ride_minutes,
+      )
+        ? `Scheduled estimate: about ${Math.ceil(result.scheduled_ride_minutes + changes * this._config.transfer_buffer)} min ${changes ? "riding and switching platforms" : "riding"}, plus train waits. The live arrival estimate below includes predicted waits when available.`
+        : "Scheduled ride times unavailable. Live departures are shown below when available.";
+    }
+  }
+  class WmataTripPlannerEditor extends HTMLElement {
+    setConfig(config) {
+      this._config = { appearance: "native", transfer_buffer: 3, ...config };
+      this._render();
+    }
+    set hass(hass) {
+      this._hass = hass;
+      this._render();
+    }
+    _render() {
+      if (!this._config || !this._hass) return;
+      if (!this._form) {
+        this._form = document.createElement("ha-form");
+        this._form.computeLabel = ({ name }) =>
+          ({
+            entity: "WMATA rail board or train map (API access)",
+            appearance: "Appearance",
+            origin: "Starting station (optional)",
+            destination: "Destination station (optional)",
+            transfer_buffer: "Minutes to change platforms",
+            title: "Title",
+          })[name] || name;
+        this._form.addEventListener("value-changed", (event) => {
+          event.stopPropagation();
+          this._config = { ...this._config, ...event.detail.value };
+          emit(this, "config-changed", { config: this._config });
+        });
+        this.append(this._form);
+      }
+      const options = Object.entries(this._hass.states || {})
+        .filter(
+          ([id, s]) =>
+            id === this._config.entity ||
+            (s.attributes.board_type === "station" &&
+              s.attributes.service_type === "train") ||
+            (Array.isArray(s.attributes.trains) &&
+              Array.isArray(s.attributes.paths)),
+        )
+        .map(([value, s]) => ({
+          value,
+          label:
+            s.attributes.friendly_name || s.attributes.station_name || value,
+        }));
+      this._form.schema = [
+        {
+          name: "entity",
+          required: true,
+          selector: { select: { options, mode: "dropdown" } },
+        },
+        {
+          name: "appearance",
+          selector: {
+            select: { options: WMATA_APPEARANCES, mode: "dropdown" },
+          },
+        },
+        { name: "origin", selector: { text: {} } },
+        { name: "destination", selector: { text: {} } },
+        {
+          name: "transfer_buffer",
+          selector: { number: { min: 1, max: 30, mode: "box" } },
+        },
+        { name: "title", selector: { text: {} } },
+      ];
+      this._form.hass = this._hass;
+      this._form.data = this._config;
+    }
+  }
+  if (!customElements.get("wmata-trip-planner"))
+    customElements.define("wmata-trip-planner", WmataTripPlanner);
+  if (!customElements.get("wmata-trip-planner-editor"))
+    customElements.define("wmata-trip-planner-editor", WmataTripPlannerEditor);
+  window.customCards.push({
+    type: "wmata-trip-planner",
+    name: "WMATA Trip Planner",
+    description:
+      "Search any two Metro stations for ride times, live trains and estimated connections.",
+    preview: true,
+  });
 })();
 
 if (!customElements.get("wmata-train-map")) {

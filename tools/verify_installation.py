@@ -205,6 +205,42 @@ async def verify(scenario):
                     assert legs[1]["arrivals"][0]["minutes"] == 6
                     assert legs[1]["arrivals"][0]["line"] == "YL"
                     assert all(leg["ride_minutes"] > 0 for leg in legs)
+                    from custom_components.wmata.websocket import (
+                        plan_trip,
+                        planner_stations,
+                    )
+
+                    map_state = next(
+                        state
+                        for state in hass.states.async_all("sensor")
+                        if state.attributes.get("paths")
+                    )
+                    count_before = len(hass.config_entries.async_entries("wmata"))
+                    await unwrap(planner_stations)(
+                        hass, connection, {"id": 100, "entity_id": map_state.entity_id}
+                    )
+                    assert any(
+                        station["name"] == "Metro Center"
+                        for station in connection.send_result.call_args.args[1][
+                            "stations"
+                        ]
+                    )
+                    await unwrap(plan_trip)(
+                        hass,
+                        connection,
+                        {
+                            "id": 101,
+                            "entity_id": map_state.entity_id,
+                            "origin": "A01",
+                            "destination": "B03",
+                        },
+                    )
+                    preview = connection.send_result.call_args.args[1]
+                    assert preview["scheduled_ride_minutes"] > 0
+                    assert preview["legs"][0]["arrivals"][0]["minutes"] == 4
+                    assert (
+                        len(hass.config_entries.async_entries("wmata")) == count_before
+                    )
                     map_options = await hass.config_entries.options.async_init(
                         network.entry_id
                     )

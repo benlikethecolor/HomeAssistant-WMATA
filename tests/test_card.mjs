@@ -1083,3 +1083,322 @@ test("direct journeys fetch ride times for the destination ETA without transfer 
   });
   assert.equal(f.card._transferTimer, null);
 });
+
+test("choosing a later origin train recalculates transfers and the final ETA without querying again", async (t) => {
+  const f = await estimatedJourney(t, [12, 16, 20]);
+  const state = f.card._hass.states["sensor.wmata_g01_arrivals"];
+  state.attributes.arrivals.push({
+    ...state.attributes.arrivals[0],
+    line: "SV",
+    destination: "Downtown Largo",
+    minutes: 7,
+  });
+  f.card._render();
+  assert.equal(f.card._connectionPlan().legs[0].chosen.minutes, 12);
+  const data = f.card._transferData;
+  f.root.querySelectorAll(".origin-choice")[1].click();
+  assert.equal(f.card._connectionPlan().origin.line, "SV");
+  assert.equal(f.card._connectionPlan().legs[0].chosen.minutes, 16);
+  assert.equal(
+    f.card._connectionPlan().arrival,
+    Date.parse(f.stamp) + 24 * 60000,
+  );
+  assert.strictEqual(f.card._transferData, data);
+  assert.equal(
+    f.root.querySelectorAll(".origin-choice")[1].getAttribute("aria-pressed"),
+    "true",
+  );
+  assert.match(
+    f.root.querySelector(".journey-eta").textContent,
+    /selected origin train/,
+  );
+  f.root.querySelector(".origin-reset").click();
+  assert.equal(f.card._connectionPlan().origin.line, "OR");
+  assert.equal(f.card._connectionPlan().legs[0].chosen.minutes, 12);
+});
+
+test("a selected origin follows its countdown and disappearing predictions require reselection", async (t) => {
+  const f = await estimatedJourney(t, [12, 16]);
+  const state = f.card._hass.states["sensor.wmata_g01_arrivals"];
+  state.attributes.arrivals.push({
+    ...state.attributes.arrivals[0],
+    minutes: 7,
+  });
+  f.card._render();
+  f.root.querySelectorAll(".origin-choice")[1].click();
+  const next = {
+    ...state,
+    attributes: {
+      ...state.attributes,
+      arrivals: [
+        { ...state.attributes.arrivals[0], minutes: 3 },
+        { ...state.attributes.arrivals[1], minutes: 6 },
+      ],
+      updated_at: new Date(Date.parse(f.stamp) + 10000).toISOString(),
+    },
+  };
+  f.card.hass = {
+    ...f.card._hass,
+    states: { ...f.card._hass.states, "sensor.wmata_g01_arrivals": next },
+  };
+  assert.equal(f.card._connectionPlan().origin.minutes, 6);
+  next.attributes.arrivals = [{ ...next.attributes.arrivals[0], minutes: 3 }];
+  f.card._render();
+  assert.equal(f.card._connectionPlan().origin, undefined);
+  assert.match(
+    f.root.querySelector(".journey-eta").textContent,
+    /selected train is no longer predicted/,
+  );
+  assert.equal(f.root.querySelectorAll('[data-connection="likely"]').length, 0);
+  f.root.querySelector(".origin-reset").click();
+  assert.equal(f.card._connectionPlan().origin.minutes, 3);
+});
+
+function quickTripResponse() {
+  const stamp = new Date().toISOString();
+  return {
+    route: {
+      ...transferRoute,
+      origin: "C04",
+      destination: "B35",
+      destination_name: "NoMa-Gallaudet U",
+    },
+    route_description:
+      "Board Orange / Silver to Metro Center. Change to Red to NoMa-Gallaudet U.",
+    scheduled_ride_minutes: 12,
+    legs: [
+      {
+        index: 0,
+        available: true,
+        ride_minutes: 4,
+        updated_at: stamp,
+        arrivals: [
+          {
+            line: "OR",
+            destination: "New Carrollton",
+            minutes: 4,
+            status: "predicted",
+          },
+          {
+            line: "SV",
+            destination: "Downtown Largo",
+            minutes: 7,
+            status: "predicted",
+          },
+        ],
+      },
+      {
+        index: 1,
+        available: true,
+        ride_minutes: 8,
+        updated_at: stamp,
+        arrivals: [12, 16, 20].map((minutes) => ({
+          line: "RD",
+          destination: "Glenmont",
+          minutes,
+          status: "predicted",
+        })),
+      },
+    ],
+  };
+}
+async function plannerFixture(t, handler, config = {}) {
+  const f = fixture(t);
+  const requests = [];
+  const planner = f.window.document.createElement("wmata-trip-planner");
+  planner.setConfig({ entity: "sensor.wmata_g01_arrivals", ...config });
+  planner.hass = {
+    ...f.hass,
+    callWS: async (msg) => {
+      requests.push(msg);
+      if (msg.type === "wmata/planner_stations")
+        return {
+          stations: [
+            {
+              code: "C04",
+              name: "Foggy Bottom-GWU",
+              lines: ["OR", "SV", "BL"],
+            },
+            {
+              code: "A01",
+              name: "Metro Center",
+              lines: ["RD", "OR", "SV", "BL"],
+            },
+            { code: "B35", name: "NoMa-Gallaudet U", lines: ["RD"] },
+          ],
+        };
+      return handler ? handler(msg) : quickTripResponse();
+    },
+  };
+  f.window.document.body.append(planner);
+  await new Promise((resolve) => setImmediate(resolve));
+  const root = planner.shadowRoot;
+  return { ...f, planner, plannerRoot: root, requests };
+}
+async function planQuickTrip(f, from = "Foggy", to = "NoMa") {
+  f.planner._originInput.value = from;
+  f.planner._destinationInput.value = to;
+  f.plannerRoot
+    .querySelector("form")
+    .dispatchEvent(new f.window.Event("submit", { cancelable: true }));
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
+test("quick planner resolves station names, shows scheduled and live estimates and allows later trains", async (t) => {
+  const f = await plannerFixture(t);
+  assert.equal(f.plannerRoot.querySelectorAll("datalist option").length, 3);
+  await planQuickTrip(f);
+  assert.deepEqual(
+    f.requests.map((r) => r.type),
+    ["wmata/planner_stations", "wmata/plan_trip"],
+  );
+  assert.equal(f.requests[1].origin, "C04");
+  assert.equal(f.requests[1].destination, "B35");
+  assert.match(
+    f.plannerRoot.querySelector(".scheduled").textContent,
+    /15 min riding and switching platforms, plus train waits/,
+  );
+  const board = f.plannerRoot.querySelector("wmata-station-card");
+  assert.ok(board.shadowRoot.querySelector(".journey-eta-time"));
+  board.shadowRoot.querySelectorAll(".origin-choice")[1].click();
+  assert.equal(board._connectionPlan().origin.line, "SV");
+  assert.equal(board._connectionPlan().legs[0].chosen.minutes, 16);
+  assert.equal(f.requests.length, 2);
+  assert.equal(board._transferTimer, null);
+  assert.ok(f.window.customCards.some((c) => c.type === "wmata-trip-planner"));
+});
+
+test("quick planner swaps stations and partial edits clear old routes without sending requests", async (t) => {
+  const f = await plannerFixture(t);
+  await planQuickTrip(f);
+  f.planner._originInput.value = "Metro";
+  f.planner._originInput.dispatchEvent(new f.window.Event("input"));
+  assert.equal(f.plannerRoot.querySelector("wmata-station-card"), null);
+  assert.equal(f.requests.length, 2);
+  f.planner._originInput.value = "Foggy Bottom-GWU";
+  f.planner._destinationInput.value = "NoMa-Gallaudet U";
+  [...f.plannerRoot.querySelectorAll("button")]
+    .find((b) => b.textContent === "Swap stations")
+    .click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.requests.at(-1).origin, "B35");
+  assert.equal(f.requests.at(-1).destination, "C04");
+});
+
+test("quick planner keeps a scheduled estimate when live connections are outside the prediction window", async (t) => {
+  const f = await plannerFixture(t, () => {
+    const result = quickTripResponse();
+    result.legs[1].arrivals = result.legs[1].arrivals.slice(0, 1);
+    result.legs[1].arrivals[0].minutes = 2;
+    return result;
+  });
+  await planQuickTrip(f);
+  assert.match(f.plannerRoot.querySelector(".scheduled").textContent, /15 min/);
+  const board = f.planner._board;
+  assert.equal(board.shadowRoot.querySelector(".journey-eta-time"), null);
+  assert.match(
+    board.shadowRoot.querySelector(".journey-eta").textContent,
+    /No catchable connection/,
+  );
+});
+
+test("quick planner ignores late responses, avoids overlapping refreshes and pauses on hidden pages or removal", async (t) => {
+  let resolve;
+  const f = await plannerFixture(
+    t,
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  await planQuickTrip(f);
+  await f.planner._refresh();
+  assert.equal(f.requests.length, 2);
+  f.planner._destinationInput.dispatchEvent(new f.window.Event("input"));
+  resolve(quickTripResponse());
+  await new Promise((r) => setImmediate(r));
+  assert.equal(f.plannerRoot.querySelector("wmata-station-card"), null);
+  Object.defineProperty(f.window.document, "visibilityState", {
+    configurable: true,
+    value: "hidden",
+  });
+  await planQuickTrip(f);
+  assert.equal(f.requests.length, 2);
+  Object.defineProperty(f.window.document, "visibilityState", {
+    configurable: true,
+    value: "visible",
+  });
+  await planQuickTrip(f);
+  assert.equal(f.requests.length, 3);
+  f.planner.remove();
+  resolve(quickTripResponse());
+  await new Promise((r) => setImmediate(r));
+  assert.equal(f.planner._timer, null);
+  assert.equal(f.plannerRoot.querySelector("wmata-station-card"), null);
+});
+
+test("quick planner validates inputs and failures do not expose API details or revive stale highlights", async (t) => {
+  let fail = false;
+  const f = await plannerFixture(t, () => {
+    if (fail) throw new Error("private response");
+    return quickTripResponse();
+  });
+  await planQuickTrip(f, "unknown", "NoMa");
+  assert.equal(f.requests.length, 1);
+  assert.match(
+    f.plannerRoot.querySelector(".status").textContent,
+    /Choose two different stations/,
+  );
+  await planQuickTrip(f);
+  fail = true;
+  await f.planner._refresh();
+  assert.match(
+    f.plannerRoot.querySelector(".status").textContent,
+    /unavailable/,
+  );
+  assert.doesNotMatch(f.plannerRoot.textContent, /private response/);
+  f.planner.hass = { ...f.planner._hass };
+  assert.equal(
+    f.planner._board.shadowRoot.querySelector(".journey-eta-time"),
+    null,
+  );
+  assert.equal(
+    f.planner._board.shadowRoot.querySelectorAll('[data-connection="likely"]')
+      .length,
+    0,
+  );
+});
+
+test("planner refresh preserves the chosen origin train and the editor uses an existing rail entity", async (t) => {
+  const f = await plannerFixture(t);
+  await planQuickTrip(f);
+  f.planner._board.shadowRoot.querySelectorAll(".origin-choice")[1].click();
+  await f.planner._refresh();
+  assert.equal(f.planner._board._connectionPlan().origin.line, "SV");
+  assert.ok(f.planner._board._originSelection);
+  const editor = f.window.document.createElement("wmata-trip-planner-editor");
+  editor.setConfig({ entity: "sensor.wmata_g01_arrivals" });
+  editor.hass = f.planner._hass;
+  const form = editor.querySelector("ha-form");
+  assert.equal(form.data.transfer_buffer, 3);
+  assert.equal(form.data.appearance, "native");
+  assert.equal(
+    form.schema.filter((field) => field.name === "entity").length,
+    1,
+  );
+  let changed;
+  editor.addEventListener("config-changed", (event) => {
+    changed = event.detail.config;
+  });
+  form.dispatchEvent(
+    new f.window.CustomEvent("value-changed", {
+      detail: { value: { transfer_buffer: 5 } },
+    }),
+  );
+  assert.equal(changed.transfer_buffer, 5);
+  assert.equal(changed.entity, "sensor.wmata_g01_arrivals");
+  assert.throws(
+    () => f.planner.setConfig({ entity: "sensor.rail", transfer_buffer: 0 }),
+    /transfer_buffer/,
+  );
+});

@@ -10,13 +10,16 @@ from homeassistant.helpers import entity_registry as er
 from .api import APIAuthError, APIConnectionError
 from .connections import ride_minutes
 from .const import CONF_JOURNEYS, DOMAIN, STATION_CODE_MAP
-from .journeys import trip_matches
+from .directions import ROUTES
+from .journeys import describe_route, plan_journey, trip_matches
 from .station_predictions import async_station_predictions
 
 
 def async_register(hass):
     websocket_api.async_register_command(hass, station_arrivals)
     websocket_api.async_register_command(hass, journey_arrivals)
+    websocket_api.async_register_command(hass, planner_stations)
+    websocket_api.async_register_command(hass, plan_trip)
 
 
 @websocket_api.websocket_command(
@@ -113,6 +116,13 @@ async def journey_arrivals(hass, connection, msg):
         )
         return
 
+    legs = await route_predictions(hass, coordinator.api, route, coordinator)
+    connection.send_result(msg["id"], {"legs": legs})
+
+
+async def route_predictions(hass, api, route, coordinator=None):
+    """Share filtering and prediction caches between saved and temporary routes."""
+
     async def predictions(index, leg):
         result = {
             "index": index,
@@ -124,7 +134,7 @@ async def journey_arrivals(hass, connection, msg):
             "updated_at": None,
         }
         try:
-            if index == 0:
+            if index == 0 and coordinator is not None:
                 if not coordinator.last_update_success or coordinator.data is None:
                     return result
                 data = {
@@ -132,9 +142,7 @@ async def journey_arrivals(hass, connection, msg):
                     "updated_at": coordinator.data.updated_at,
                 }
             else:
-                data = await async_station_predictions(
-                    hass, coordinator.api, leg["from"]
-                )
+                data = await async_station_predictions(hass, api, leg["from"])
             plan = {
                 "origin": leg["from"],
                 "origin_name": leg["from_name"],
@@ -154,9 +162,92 @@ async def journey_arrivals(hass, connection, msg):
         *(predictions(index, leg) for index, leg in enumerate(route["legs"]))
     )
     try:
-        times = await coordinator.api.rail_times()
+        times = await api.rail_times()
     except (APIAuthError, APIConnectionError):
         times = None
     for result, leg in zip(legs, route["legs"], strict=True):
         result["ride_minutes"] = ride_minutes(leg, times)
-    connection.send_result(msg["id"], {"legs": legs})
+    return legs
+
+
+def planner_client(hass, connection, msg):
+    """A readable, loaded rail entity provides credentials; never accept a key."""
+    if not connection.user.permissions.check_entity(msg["entity_id"], POLICY_READ):
+        connection.send_error(msg["id"], "unauthorized", "Entity access denied")
+        return None
+    entity = er.async_get(hass).async_get(msg["entity_id"])
+    entry = (
+        hass.config_entries.async_get_entry(entity.config_entry_id) if entity else None
+    )
+    coordinator = getattr(entry, "runtime_data", None)
+    if (
+        not entry
+        or entry.domain != DOMAIN
+        or entry.data.get("service_type") not in ("train", "map")
+        or not coordinator
+        or entity.platform != DOMAIN
+        or entity.domain != "sensor"
+        or getattr(getattr(entry, "state", None), "value", "loaded") != "loaded"
+    ):
+        connection.send_error(
+            msg["id"],
+            "invalid_entity",
+            "Select an available WMATA rail board or train map",
+        )
+        return None
+    return coordinator.api
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "wmata/planner_stations", vol.Required("entity_id"): str}
+)
+@websocket_api.async_response
+async def planner_stations(hass, connection, msg):
+    """Return named stations once, combining lines at interchange platforms."""
+    if planner_client(hass, connection, msg) is None:
+        return
+    stations = {}
+    for code, name in STATION_CODE_MAP.items():
+        station = stations.setdefault(name, {"code": code, "name": name, "lines": []})
+        for line, route in ROUTES.items():
+            if code in route and line not in station["lines"]:
+                station["lines"].append(line)
+    connection.send_result(
+        msg["id"],
+        {"stations": sorted(stations.values(), key=lambda station: station["name"])},
+    )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "wmata/plan_trip",
+        vol.Required("entity_id"): str,
+        vol.Required("origin"): vol.In(STATION_CODE_MAP),
+        vol.Required("destination"): vol.In(STATION_CODE_MAP),
+    }
+)
+@websocket_api.async_response
+async def plan_trip(hass, connection, msg):
+    """Plan a temporary route without creating entities or changing settings."""
+    api = planner_client(hass, connection, msg)
+    if api is None:
+        return
+    route = plan_journey(msg["origin"], msg["destination"])
+    if not route:
+        connection.send_error(
+            msg["id"], "invalid_route", "Choose two different Metro stations"
+        )
+        return
+    legs = await route_predictions(hass, api, route)
+    durations = [leg["ride_minutes"] for leg in legs]
+    connection.send_result(
+        msg["id"],
+        {
+            "route": route,
+            "route_description": describe_route(route),
+            "legs": legs,
+            "scheduled_ride_minutes": sum(durations)
+            if all(value is not None for value in durations)
+            else None,
+        },
+    )

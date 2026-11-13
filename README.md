@@ -68,6 +68,19 @@ Destinations are the train's final stop, not an intermediate station you want to
 
 Direction labels depend on the station and route. A Glenmont train, for example, is southbound at Dupont Circle and northbound at Union Station. If its direction can't be determined, the card says so.
 
+## Quick trip planner
+
+Add **WMATA Trip Planner** from the dashboard card picker. Choose an existing WMATA rail board or train map for API access, then search the **From** and **To** station fields and tap **Plan trip**. No new integration entries or saved journeys are needed. **Swap stations** reverses the trip.
+
+~~~yaml
+type: custom:wmata-trip-planner
+entity: sensor.wmata_metro_center_arrivals
+appearance: native
+transfer_buffer: 3
+~~~
+
+Optional `origin` and `destination` values prefill station names. `appearance` uses the same presets as the station card. Routes prefer fewer transfers, then fewer stops. The scheduled estimate includes riding and platform changes, **plus train waits**; the separate live arrival estimate includes those waits when the predictions cover the connections. Departures refresh every 30 seconds while the card is open. This planner starts at a Metro station; walking time to the station is not included.
+
 ## Automations and optional sensors
 
 For a simple “a train is coming” automation, open the station’s device page, show its disabled entities, and enable **Train due soon** (or **Bus due soon**). It turns on when an arrival is within five minutes, including arriving and boarding trains. Change the threshold under **Configure → Polling and arrival settings**.
@@ -95,7 +108,7 @@ Rail stations also offer disabled-by-default arrival sensors for each line and d
 
 Open the **origin station’s Configure → Station-to-station journey**, choose the station you want to reach, and review the route before saving. For example, configure Union Station and choose Huntington: the route changes from Red to Yellow at Gallery Place. The planner prefers fewer transfers, then fewer stops.
 
-Add the saved journey to a station-board card by selecting its name in the card editor. Its sensor reports **minutes until the next train to board at the origin**. Transfer instructions and live predictions at each transfer station appear on the card. Transfer boards refresh every 30 seconds while the card is open and filter trains to those that reach the next leg’s destination. The card estimates when you’ll reach each transfer, using the next matching origin train and WMATA’s scheduled ride times. It adds **three minutes to change platforms**, then highlights the first likely connection and other catchable departures. Change `transfer_buffer` in YAML or **Minutes to change platforms** in the editor. Later transfers build on the suggested connection at the previous stop. The arrival summary shows when you should reach the final destination and the total minutes from now, including the origin wait, rides, platform changes, and transfer waits. It works for direct journeys too. Hide it with `show_destination_eta: false` or the card editor. These are estimates: delays can change them, and departures beyond WMATA’s prediction window are not invented. Stale predictions, missing ride times, or an unpredicted connection leave the destination ETA unavailable. Transfer trains with no reliable connection estimate stay unhighlighted. The journey sensor still reports the origin boarding time. Only trains whose reported destination reaches the first leg’s stopping point are shown, so a train turning back before your stop is excluded.
+Add the saved journey to a station-board card by selecting its name in the card editor. Its sensor reports **minutes until the next train to board at the origin**. Transfer instructions and live predictions at each transfer station appear on the card. Transfer boards refresh every 30 seconds while the card is open and filter trains to those that reach the next leg’s destination. The card estimates when you’ll reach each transfer, using the next matching origin train and WMATA’s scheduled ride times. It adds **three minutes to change platforms**, then highlights the first likely connection and other catchable departures. Change `transfer_buffer` in YAML or **Minutes to change platforms** in the editor. Tap **Use this train** on an origin departure to plan around a later train. **Use next train** returns to the automatic choice. Connections and the destination arrival update immediately. A selection stays on this card; it does not change the saved sensor or automations. If the selected train disappears from predictions, choose again. Later transfers build on the suggested connection at the previous stop. The arrival summary shows when you should reach the final destination and the total minutes from now, including the origin wait, rides, platform changes, and transfer waits. It works for direct journeys too. Hide it with `show_destination_eta: false` or the card editor. These are estimates: delays can change them, and departures beyond WMATA’s prediction window are not invented. Stale predictions, missing ride times, or an unpredicted connection leave the destination ETA unavailable. Transfer trains with no reliable connection estimate stay unhighlighted. The journey sensor still reports the origin boarding time. Only trains whose reported destination reaches the first leg’s stopping point are shown, so a train turning back before your stop is excluded.
 
 Use **Edit a journey** to change its destination or name. For line, terminus, or bus-route filters instead, choose **Custom arrival filter**. Existing saved filters keep working. Bus direction numbers vary by route; check the board’s `direction` and `direction_id` attributes if you’re unsure.
 
