@@ -55,11 +55,19 @@
         }
       },
       "reconfigure": {
-        "title": "Update API key",
+        "title": "Change this entry",
+        "description": "Replace the API key, or point this entry at a different place. Moving it replaces its sensors, so dashboards and automations that use them will need updating. Other WMATA entries that share the key get the new key too.",
         "data": {
-          "api_key": "API key"
+          "api_key": "New API key",
+          "station": "Station",
+          "stop": "Stop ID",
+          "home": "Home station",
+          "work": "Work station",
+          "name": "Name"
         },
-        "description": "Other WMATA entries that share this key are updated too."
+        "data_description": {
+          "api_key": "Leave empty to keep the current key."
+        }
       },
       "reauth_confirm": {
         "title": "Reconnect to WMATA",
@@ -76,12 +84,13 @@
       "no_stops_nearby": "There are no bus stops within half a mile of that spot that you haven't already added. Move the pin, or enter the stop ID.",
       "same_station": "Pick two different stations.",
       "no_route": "No route was found between those stations.",
-      "unknown_station": "That isn't a Metro station. Start typing and pick one from the list."
+      "unknown_station": "That isn't a Metro station. Start typing and pick one from the list.",
+      "already_added": "That one already has its own entry."
     },
     "abort": {
       "already_configured": "That station, stop, commute or map is already set up.",
       "reauth_successful": "API key updated.",
-      "reconfigure_successful": "API key updated.",
+      "reconfigure_successful": "Entry updated.",
       "credential_unavailable": "That saved key is no longer available. Start setup again."
     },
     "create_entry": {

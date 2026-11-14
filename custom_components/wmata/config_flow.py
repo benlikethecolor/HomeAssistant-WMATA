@@ -9,6 +9,8 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, OptionsFlow
 from homeassistant.const import CONF_API_KEY, CONF_ID, UnitOfLength
 from homeassistant.core import callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util.location import distance
@@ -490,35 +492,182 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_reconfigure(self, user_input=None):
-        return await self._credentials("reconfigure", user_input)
+        """Change the key, or point the entry at a different place."""
+        entry = self._get_reconfigure_entry()
+        service = entry.data[CONF_SERVICE_TYPE]
+        current = entry.data.get(CONF_ID, "")
+        errors = {}
+        if user_input is not None:
+            key = (user_input.get(CONF_API_KEY) or "").strip() or entry.data[
+                CONF_API_KEY
+            ]
+            target = {}
+            if service == "train":
+                station = resolve_station(user_input.get("station", current))
+                if station is None:
+                    errors["station"] = "unknown_station"
+                elif STATION_CODE_MAP[station] != STATION_CODE_MAP.get(current):
+                    target = {CONF_ID: station}
+            elif service == "bus":
+                target = {CONF_ID: str(user_input.get("stop", current)).strip()}
+            elif service == "commute":
+                home = resolve_station(user_input.get("home", entry.data["home"]))
+                work = resolve_station(user_input.get("work", entry.data["work"]))
+                if home is None:
+                    errors["home"] = "unknown_station"
+                elif work is None:
+                    errors["work"] = "unknown_station"
+                elif STATION_CODE_MAP[home] == STATION_CODE_MAP[work]:
+                    errors["work"] = "same_station"
+                elif plan_journey(home, work) is None:
+                    errors["work"] = "no_route"
+                else:
+                    first, second = min(station_codes(home)), min(station_codes(work))
+                    target = {
+                        CONF_ID: f"{first}-{second}",
+                        "home": first,
+                        "work": second,
+                        "location_name": (user_input.get("name") or "").strip()
+                        or entry.data.get("location_name", "Commute"),
+                    }
+            moved = target.get(CONF_ID, current) != current
+            if moved and any(
+                other.entry_id != entry.entry_id
+                and other.data.get(CONF_SERVICE_TYPE) == service
+                and (
+                    other.data.get(CONF_ID) == target[CONF_ID]
+                    or (
+                        service == "train"
+                        and other.data.get(CONF_ID) in station_codes(target[CONF_ID])
+                    )
+                )
+                for other in self._async_current_entries()
+            ):
+                errors["base"] = "already_added"
+            if not errors:
+                try:
+                    data = await validate_location(
+                        self.hass, {**entry.data, **target, CONF_API_KEY: key}
+                    )
+                    shared = await self._entries_sharing_key(entry, key)
+                except APIAuthError:
+                    errors["base"] = "invalid_auth"
+                except APIConnectionError:
+                    errors["base"] = "cannot_connect"
+                except InvalidLocation:
+                    errors["base"] = "invalid_location"
+                else:
+                    self._update_shared_key(shared, key)
+                    changes = {}
+                    if moved:
+                        changes = self._move_entry(entry, data)
+                    return self.async_update_reload_and_abort(
+                        entry, data=data, reason="reconfigure_successful", **changes
+                    )
+        fields = {
+            vol.Optional(CONF_API_KEY): selector.TextSelector(
+                selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+            )
+        }
+        chosen = user_input or {}
+        if service == "train":
+            # The list holds one code per station; show the one for this entry.
+            default = STATIONS_BY_NAME.get(STATION_CODE_MAP.get(current), current)
+            fields[vol.Required("station", default=chosen.get("station", default))] = (
+                station_selector()
+            )
+        elif service == "bus":
+            fields[vol.Required("stop", default=chosen.get("stop", current))] = (
+                selector.TextSelector()
+            )
+        elif service == "commute":
+            for field in ("home", "work"):
+                fields[
+                    vol.Required(field, default=chosen.get(field, entry.data[field]))
+                ] = station_selector()
+            fields[
+                vol.Optional(
+                    "name",
+                    default=chosen.get(
+                        "name", entry.data.get("location_name", "Commute")
+                    ),
+                )
+            ] = vol.All(str, vol.Length(max=60))
+        return self.async_show_form(
+            step_id="reconfigure", data_schema=vol.Schema(fields), errors=errors
+        )
+
+    def _move_entry(self, entry, data) -> dict:
+        """Clear out the old place's entities and work out the entry's new identity."""
+        entities = er.async_get(self.hass)
+        for entity in er.async_entries_for_config_entry(entities, entry.entry_id):
+            entities.async_remove(entity.entity_id)
+        devices = dr.async_get(self.hass)
+        for device in dr.async_entries_for_config_entry(devices, entry.entry_id):
+            devices.async_remove_device(device.id)
+        service = data[CONF_SERVICE_TYPE]
+        if service == "commute":
+            return {
+                "unique_id": f"commute:{data['home']}:{data['work']}",
+                "title": (
+                    f"{STATION_CODE_MAP[data['home']]} ↔ "
+                    f"{STATION_CODE_MAP[data['work']]}"
+                ),
+            }
+        codes = data.get("station_codes", [data[CONF_ID]])
+        changes = {
+            "unique_id": f"{service}:{','.join(codes)}",
+            "title": data["location_name"],
+        }
+        journeys = []
+        for journey in entry.options.get(CONF_JOURNEYS, []):
+            if journey.get("kind") != "station_to_station":
+                journeys.append(journey)
+                continue
+            # Keep the destination and plan it again from the new station.
+            route = plan_journey(data[CONF_ID], journey["target_station"])
+            if route:
+                journeys.append({**journey, "route": route})
+        if CONF_JOURNEYS in entry.options:
+            changes["options"] = {**entry.options, CONF_JOURNEYS: journeys}
+        return changes
+
+    async def _entries_sharing_key(self, entry, key):
+        """Other entries on the same key, checked against the replacement key."""
+        if key == entry.data.get(CONF_API_KEY):
+            return []
+        shared = [
+            other
+            for other in self._async_current_entries()
+            if other.entry_id != entry.entry_id
+            and other.data.get(CONF_API_KEY) == entry.data.get(CONF_API_KEY)
+        ]
+        # Validate every affected service before changing any saved key.
+        for other in shared:
+            await validate_location(self.hass, {**other.data, CONF_API_KEY: key})
+        return shared
+
+    def _update_shared_key(self, shared, key):
+        """A saved key represents the same subscription across entries."""
+        for other in shared:
+            self.hass.config_entries.async_update_entry(
+                other, data={**other.data, CONF_API_KEY: key}
+            )
+            self.hass.async_create_task(
+                self.hass.config_entries.async_reload(other.entry_id)
+            )
 
     async def async_step_reauth(self, entry_data):
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(self, user_input=None):
-        return await self._credentials("reauth_confirm", user_input)
-
-    async def _credentials(self, step_id, user_input):
+        """WMATA rejected the key; ask for a working one."""
         errors = {}
-        entry = (
-            self._get_reauth_entry()
-            if step_id == "reauth_confirm"
-            else self._get_reconfigure_entry()
-        )
+        entry = self._get_reauth_entry()
         if user_input is not None:
             try:
                 data = await validate_location(self.hass, {**entry.data, **user_input})
-                shared = [
-                    other
-                    for other in self._async_current_entries()
-                    if other.entry_id != entry.entry_id
-                    and other.data.get(CONF_API_KEY) == entry.data.get(CONF_API_KEY)
-                ]
-                # Validate every affected service before changing any saved key.
-                for other in shared:
-                    await validate_location(
-                        self.hass, {**other.data, CONF_API_KEY: data[CONF_API_KEY]}
-                    )
+                shared = await self._entries_sharing_key(entry, data[CONF_API_KEY])
             except APIAuthError:
                 errors["base"] = "invalid_auth"
             except APIConnectionError:
@@ -526,23 +675,12 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
             except InvalidLocation:
                 errors["base"] = "invalid_location"
             else:
-                # A saved key represents the same subscription across entries.
-                for other in shared:
-                    self.hass.config_entries.async_update_entry(
-                        other, data={**other.data, CONF_API_KEY: data[CONF_API_KEY]}
-                    )
-                    self.hass.async_create_task(
-                        self.hass.config_entries.async_reload(other.entry_id)
-                    )
+                self._update_shared_key(shared, data[CONF_API_KEY])
                 return self.async_update_reload_and_abort(
-                    entry,
-                    data_updates=data,
-                    reason="reauth_successful"
-                    if step_id == "reauth_confirm"
-                    else "reconfigure_successful",
+                    entry, data=data, reason="reauth_successful"
                 )
         return self.async_show_form(
-            step_id=step_id, data_schema=KEY_SCHEMA, errors=errors
+            step_id="reauth_confirm", data_schema=KEY_SCHEMA, errors=errors
         )
 
 

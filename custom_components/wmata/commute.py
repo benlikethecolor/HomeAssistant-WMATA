@@ -8,6 +8,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .alerts import alerts_for
 from .api import APIAuthError, APIConnectionError, WmataApi
 from .const import (
     CONF_INTERVAL,
@@ -89,13 +90,24 @@ class CommuteCoordinator(DataUpdateCoordinator):
             if all(data is None for data in station_data.values()):
                 raise UpdateFailed("WMATA predictions are unavailable")
             trips = {}
+            alerts = await self.api.rail_alerts()
             for direction, group in routes.items():
                 alternatives = await trip_alternatives(
                     self.hass, self.api, group, station_data, timetable
                 )
-                trips[direction] = best_trip(
+                trip = trips[direction] = best_trip(
                     alternatives, datetime.now(UTC).timestamp(), self.buffer
                 )
+                if trip:
+                    # Alerts on any line the chosen route rides.
+                    trip["alerts"] = alerts_for(
+                        alerts,
+                        {
+                            line
+                            for leg in trip["route"]["legs"]
+                            for line in leg["lines"]
+                        },
+                    )
             return {"trips": trips, "updated_at": datetime.now(UTC).isoformat()}
         except APIAuthError as err:
             raise ConfigEntryAuthFailed("WMATA API key is invalid") from err

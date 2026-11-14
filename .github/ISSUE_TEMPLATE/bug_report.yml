@@ -28,6 +28,7 @@ body:
         - Rail arrivals or journeys
         - Bus arrivals or journeys
         - Commute sensors or trip planner
+        - Service alerts or the blueprint
         - Live train map
         - Installation or setup
     validations:

@@ -46,6 +46,8 @@ No HACS? Download the [latest release](https://github.com/benlikethecolor/HomeAs
 
 For a commute, pick your home and work stations instead. Run through setup once for each thing you want. After the first one you can reuse the key you already saved instead of pasting it again.
 
+If you move, or picked the wrong place, you don't have to start over. Open the entry's three-dot menu and choose **Reconfigure** to switch it to a different station, stop, or pair of commute stations. Its sensors are replaced with ones for the new place, so anything that used the old ones needs updating.
+
 You don't need station codes, and you don't need to know which platform your train leaves from. Transfer stations such as Metro Center and L'Enfant Plaza appear once in the list and cover all of their lines.
 
 If you already know a bus stop's seven-digit ID, you can type it in and skip the map. It's printed on the sign at the stop, and [busETA](https://buseta.wmata.com/) shows it too. That's also the way to tell apart two stops with the same name on opposite sides of a street. The map search sends the pin's coordinates to WMATA to find stops, and nothing else.
@@ -103,6 +105,7 @@ A destination is where the train ends its run, not where you get off. For an eas
 | `appearance` | `native` | `native`, `standard`, `minimal`, `glass`, or `daylight` |
 | `show_filters` | `true` | Show the line, direction, and destination filters |
 | `show_updated` | `true` | Show when the board last refreshed |
+| `show_alerts` | `true` | Show service alerts and elevator outages above the arrivals |
 | `lines` | all | Rail line codes, such as `[BL, SV]` |
 | `routes` | all | Bus routes, such as `[D34]` |
 | `destinations` | all | Station codes, such as `[D13]` |
@@ -115,6 +118,8 @@ A destination is where the train ends its run, not where you get off. For an eas
 About `appearance`: the default, `native` (called "Home Assistant" in the editor), borrows the fonts, colors, and corners of the built-in cards, so it follows whatever theme you use. `standard` is the bolder departure-board look in the screenshot above. `minimal` drops the borders and headings, `glass` is translucent, and `daylight` switches between a light and a dark look with sunrise and sunset, regardless of your HA theme. All three cards take the same values.
 
 Direction labels are worked out from where the train is and where it's going. That means the same Glenmont train is southbound at Dupont Circle and northbound at Union Station. When a direction can't be worked out, the card says so instead of guessing.
+
+When WMATA reports a delay or alert on a line that stops at the station, it appears in a banner above the arrivals, along with any elevator there that's out of service. A card pinned to certain lines only shows alerts for those lines. A train flagged as the last of the night gets a **Last train tonight** tag on its row.
 
 ## Trip planner
 
@@ -167,7 +172,9 @@ A **Commute between two stations** entry turns the same estimate into sensors, s
 | **To Metro Center next train** | Minutes until the train you'd take leaves |
 | **To Metro Center arrival** | The estimated arrival time |
 
-They follow the fastest route at that moment, with the same rules as the trip planner card. The travel time sensor's attributes say which route that is, how many transfers it has, and whether any part of it relies on the timetable (`schedule_estimate`). When there isn't enough information for an honest estimate, the sensors read `unknown`.
+They follow the fastest route at that moment, with the same rules as the trip planner card. The travel time sensor's attributes say which route that is, how many transfers it has, whether any part of it relies on the timetable (`schedule_estimate`), and whether the train you'd take is the last one of the night (`last_train`). When there isn't enough information for an honest estimate, the sensors read `unknown`.
+
+A commute also has a **Service alert** sensor that turns on when WMATA reports a problem on any line the trip uses, in either direction.
 
 ```yaml
 alias: Slow commute warning
@@ -224,7 +231,49 @@ The Trains sensor is a count of trains on the network. For automations about you
 
 ## Automations
 
-The easiest trigger is the **Train due soon** binary sensor (**Bus due soon** at a bus stop). It's disabled by default, so open the station under **Settings → Devices & services → WMATA**, show the disabled entities, and enable it. It turns on whenever something is five minutes away or less, including trains that are arriving or boarding.
+### Time to leave
+
+The quickest way to get a "head for the station" reminder is the blueprint that comes with this project. It watches a countdown sensor and notifies you when your train is as many minutes away as you need to reach the platform. Then it stays quiet for an hour, so you get one reminder and not one for every train.
+
+[![Import the time to leave blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fbenlikethecolor%2FHomeAssistant-WMATA%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fwmata%2Ftime_to_leave.yaml)
+
+After importing it, create an automation from it and fill in:
+
+- **Train to catch.** A commute's "next train" sensor works best, because it follows the train your route actually uses. A station's line-and-direction sensor or its Arrivals sensor works too.
+- **Minutes you need to reach the platform.**
+- **When to watch.** Weekday mornings by default.
+- **Notify action.** For example `notify.mobile_app_your_phone`. You can add other actions as well, such as a spoken announcement.
+
+Pick a commute's travel time sensor too and the message includes how long the trip will take.
+
+### Service alerts
+
+Every station, bus stop, and commute has a **Service alert** binary sensor. It turns on while WMATA reports a delay or alert on a line or route that stops there, and its `summary` attribute holds the text.
+
+```yaml
+alias: Metro disruption
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.wmata_metro_center_service_alert
+    to: "on"
+actions:
+  - action: notify.mobile_app_your_phone
+    data:
+      title: Metro alert
+      message: "{{ state_attr('binary_sensor.wmata_metro_center_service_alert', 'summary') }}"
+mode: single
+```
+
+Two more are available at rail stations, both disabled by default:
+
+- **Elevator outage** turns on while an elevator at the station is out of service. Escalators are listed in its attributes but don't change its state, since one is nearly always being repaired somewhere.
+- **Last train** turns on while one of the trains on the board is the last of the night, and lists which ones.
+
+Alerts are fetched once a minute for the whole integration, not per station, so they add very little to your API use.
+
+### Train due soon
+
+The **Train due soon** binary sensor (**Bus due soon** at a bus stop) is the simplest trigger. It's disabled by default, so open the station under **Settings → Devices & services → WMATA**, show the disabled entities, and enable it. It turns on whenever something is five minutes away or less, including trains that are arriving or boarding.
 
 ```yaml
 alias: Metro train approaching
@@ -290,9 +339,11 @@ To go back, restore the backup along with the old integration files.
 
 **The board is empty.** Check that the station is open and that you haven't filtered everything out, on the card or in the journey.
 
+**There are never any alerts.** That usually just means service is normal. Alerts come from WMATA's incident feed, which is part of the default tier. If your key can't read it, arrivals keep working and the alert sensors simply stay off.
+
 **The map background is blank.** Your browser can't reach the tile server. The diagram view works offline.
 
-**A sensor is unavailable.** Look for WMATA entries in **Settings → System → Logs**. If the key changed, update it with **Reconfigure** on any entry. Other entries using the same key are updated at the same time. If you're running into rate limits, raise the polling interval from its default of 30 seconds under **Configure → Polling and arrival settings**.
+**A sensor is unavailable.** Look for WMATA entries in **Settings → System → Logs**. If the key changed, enter the new one with **Reconfigure** on any entry. Other entries using the same key are updated at the same time. If you're running into rate limits, raise the polling interval from its default of 30 seconds under **Configure → Polling and arrival settings**.
 
 When you [open an issue](https://github.com/benlikethecolor/HomeAssistant-WMATA/issues), include your Home Assistant version, the integration version, and what the logs say. **Download diagnostics** in the entry's three-dot menu produces a file with status and counts only. It leaves out your key, your stations, and your journey names. Do look over any logs or screenshots yourself before posting them.
 

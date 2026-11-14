@@ -134,6 +134,9 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
             trains=AsyncMock(return_value=[]),
             buses=AsyncMock(return_value=[]),
             stop_name=AsyncMock(return_value="Test stop"),
+            rail_alerts=AsyncMock(return_value=[]),
+            bus_alerts=AsyncMock(return_value=[]),
+            unit_outages=AsyncMock(return_value=[]),
         )
         return c
 
@@ -608,7 +611,7 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
             ):
                 await flow.async_step_reauth_confirm({"api_key": "new"})
         self.assertEqual(update.call_args.kwargs["reason"], "reauth_successful")
-        self.assertEqual(update.call_args.kwargs["data_updates"]["api_key"], "new")
+        self.assertEqual(update.call_args.kwargs["data"]["api_key"], "new")
 
     async def test_reconfigure_preserves_entry_and_reloads_once(self):
         flow = WmataConfigFlow()
@@ -627,7 +630,7 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
         ):
             await flow.async_step_reconfigure({"api_key": "new"})
         self.assertIs(update.call_args.args[0], e)
-        self.assertEqual(update.call_args.kwargs["data_updates"]["api_key"], "new")
+        self.assertEqual(update.call_args.kwargs["data"]["api_key"], "new")
 
     async def test_options_settings_and_journey_crud(self):
         flow = WmataOptionsFlow()

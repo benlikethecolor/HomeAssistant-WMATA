@@ -2201,3 +2201,110 @@ test("on a Home Assistant page the cards wait for the app before registering", a
   assert.equal(card.dataset.appearance, "native");
   await window.happyDOM.close();
 });
+
+const redDelay = {
+  id: "RD-1",
+  type: "delay",
+  lines: ["RD"],
+  routes: [],
+  description: "Red Line: Expect delays to Glenmont.",
+};
+const blueAlert = {
+  id: "BL-1",
+  type: "alert",
+  lines: ["BL", "SV"],
+  routes: [],
+  description: '<img src=x onerror="window.hacked=1"> Single tracking.',
+};
+function withAttributes(f, extra, config) {
+  const state = f.hass.states["sensor.wmata_g01_arrivals"];
+  if (config)
+    f.card.setConfig({ entity: "sensor.wmata_g01_arrivals", ...config });
+  f.card.hass = {
+    states: {
+      "sensor.wmata_g01_arrivals": {
+        ...state,
+        attributes: { ...state.attributes, ...extra },
+      },
+    },
+  };
+}
+
+test("service alerts and broken elevators appear above the arrivals as plain text", (t) => {
+  const f = fixture(t);
+  assert.equal(f.root.querySelector(".alerts"), null);
+  withAttributes(f, {
+    alerts: [redDelay, blueAlert],
+    outages: [
+      { type: "elevator", location: "Elevator between street and mezzanine" },
+      { type: "escalator", location: "Escalator to platform" },
+    ],
+  });
+  const items = [...f.root.querySelectorAll(".alert")].map((n) =>
+    n.textContent.trim(),
+  );
+  assert.equal(items.length, 3);
+  assert.match(items[0], /^Delay · Red/);
+  assert.match(items[0], /Expect delays to Glenmont/);
+  assert.match(items[1], /^Alert · Blue, Silver/);
+  assert.match(items[2], /Elevator out of service.*street and mezzanine/);
+  // Descriptions come from WMATA and must never be parsed as markup.
+  assert.equal(f.root.querySelector(".alerts img"), null);
+  assert.equal(f.window.hacked, undefined);
+  assert.equal(f.root.querySelectorAll(".arrival").length, 3);
+});
+
+test("pinned lines limit the alerts, long lists are capped and the banner can be hidden", (t) => {
+  const f = fixture(t);
+  withAttributes(f, { alerts: [redDelay, blueAlert] }, { lines: ["BL"] });
+  assert.equal(f.root.querySelectorAll(".alert").length, 1);
+  assert.match(f.root.querySelector(".alert").textContent, /Blue, Silver/);
+  const many = Array.from({ length: 6 }, (_, i) => ({
+    ...redDelay,
+    id: `RD-${i}`,
+  }));
+  withAttributes(f, { alerts: many }, {});
+  const items = [...f.root.querySelectorAll(".alert")];
+  assert.equal(items.length, 5);
+  assert.equal(items.at(-1).textContent, "2 more alerts");
+  withAttributes(f, { alerts: many }, { show_alerts: false });
+  assert.equal(f.root.querySelector(".alerts"), null);
+  withAttributes(f, { alerts: "broken", outages: null }, {});
+  assert.equal(f.root.querySelector(".alerts"), null);
+  assert.throws(
+    () =>
+      f.card.setConfig({
+        entity: "sensor.wmata_g01_arrivals",
+        show_alerts: "yes",
+      }),
+    /show_alerts/,
+  );
+});
+
+test("the last train of the night is tagged on its row", (t) => {
+  const f = fixture(t, [
+    { ...sample[0], last_train: false },
+    { ...sample[1], last_train: true },
+  ]);
+  const rows = [...f.root.querySelectorAll(".arrival")];
+  assert.equal(rows[0].querySelector(".last-train"), null);
+  assert.equal(
+    rows[1].querySelector(".last-train").textContent,
+    "LAST TRAIN TONIGHT",
+  );
+});
+
+test("the planner shows alerts for the route on screen only", async (t) => {
+  const f = await plannerFixture(t, () => {
+    const direct = { ...quickTripResponse(), id: "direct", alerts: [redDelay] };
+    return { ...direct, alternatives: [direct] };
+  });
+  assert.equal(f.plannerRoot.querySelector(".alerts"), null);
+  await planQuickTrip(f);
+  assert.match(
+    f.plannerRoot.querySelector(".planner-alerts .alert").textContent,
+    /Delay · Red/,
+  );
+  f.planner._originInput.dispatchEvent(new f.window.Event("input"));
+  assert.equal(f.plannerRoot.querySelector(".alerts"), null);
+});

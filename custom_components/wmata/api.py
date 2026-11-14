@@ -14,6 +14,7 @@ from typing import Any
 
 import aiohttp
 
+from .alerts import bus_alert, rail_alert, unit_outage
 from .const import URL
 from .schedules import ZONE, RailSchedule
 
@@ -46,6 +47,9 @@ class RequestState:
     schedule_expiry: float = 0
     schedule_date: str = ""
     schedule_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # kind -> (expires, rows); alerts are shared by every entry on the key.
+    alerts: dict[str, tuple[float, list]] = field(default_factory=dict)
+    alerts_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class WmataApi:
@@ -253,6 +257,50 @@ class WmataApi:
             self._state.schedule = schedule
             self._state.schedule_expiry = now + 21600
             return schedule
+
+    async def _alerts(self, kind, path, key, parse, ttl) -> list[dict[str, Any]]:
+        """Advisory data: never raises, and keeps the last answer on failure."""
+        async with self._state.alerts_lock:
+            now = asyncio.get_running_loop().time()
+            expires, rows = self._state.alerts.get(kind, (0, []))
+            if now < expires:
+                return rows
+            try:
+                fresh = [
+                    alert
+                    for alert in map(parse, self._items(await self.get(path), key))
+                    if alert
+                ]
+            except APIConnectionError:
+                # Try again in a minute, showing what was last known.
+                self._state.alerts[kind] = (now + 60, rows)
+                return rows
+            except APIAuthError:
+                # A key without the Incidents product still gets its arrivals.
+                self._state.alerts[kind] = (now + 900, [])
+                return []
+            self._state.alerts[kind] = (now + ttl, fresh)
+            return fresh
+
+    async def rail_alerts(self) -> list[dict[str, Any]]:
+        return await self._alerts(
+            "rail", "Incidents.svc/json/Incidents", "Incidents", rail_alert, 60
+        )
+
+    async def bus_alerts(self) -> list[dict[str, Any]]:
+        return await self._alerts(
+            "bus", "Incidents.svc/json/BusIncidents", "BusIncidents", bus_alert, 60
+        )
+
+    async def unit_outages(self) -> list[dict[str, Any]]:
+        """Elevators and escalators out of service, for every station at once."""
+        return await self._alerts(
+            "units",
+            "Incidents.svc/json/ElevatorIncidents",
+            "ElevatorIncidents",
+            unit_outage,
+            300,
+        )
 
     async def buses(self, stop: str) -> list[dict[str, Any]]:
         return self._items(

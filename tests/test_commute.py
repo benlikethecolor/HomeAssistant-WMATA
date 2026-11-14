@@ -63,6 +63,7 @@ class CommuteTest(unittest.IsolatedAsyncioTestCase):
             rail_times=AsyncMock(return_value=RIDE_TIMES),
             rail_schedule=AsyncMock(side_effect=APIConnectionError("No timetable")),
             rail_schedule_ready=lambda: True,
+            rail_alerts=AsyncMock(return_value=[]),
         )
 
     async def asyncTearDown(self):

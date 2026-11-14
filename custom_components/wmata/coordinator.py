@@ -12,6 +12,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .alerts import alerts_for, base_route
 from .api import APIAuthError, APIConnectionError, InvalidLocation, WmataApi
 from .const import (
     CONF_INTERVAL,
@@ -43,6 +44,9 @@ class APIData:
     next_buses: list[dict]
     next_trains: list[dict]
     updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    # Every current alert for this service, and this station's broken units.
+    alerts: list[dict] = field(default_factory=list)
+    outages: list[dict] = field(default_factory=list)
 
     @property
     def arrivals(self) -> list[dict]:
@@ -70,6 +74,8 @@ class WmataCoordinator(DataUpdateCoordinator[APIData]):
             async_get_clientsession(hass), config_entry.data[CONF_API_KEY], hass=hass
         )
         self._metadata_loaded = False
+        # Bus routes seen at this stop, so alerts still match between buses.
+        self.routes: set[str] = set()
         super().__init__(
             hass,
             _LOGGER,
@@ -123,10 +129,36 @@ class WmataCoordinator(DataUpdateCoordinator[APIData]):
                 self._metadata_loaded = True
             if self.service_type == "train":
                 trains = await self.api.trains(self.codes)
-                return APIData([], sorted_predictions(trains, "Min"))
+                return APIData(
+                    [],
+                    sorted_predictions(trains, "Min"),
+                    alerts=await self.api.rail_alerts(),
+                    outages=[
+                        unit
+                        for unit in await self.api.unit_outages()
+                        if unit["station_code"] in self.codes
+                    ],
+                )
             buses = await self.api.buses(self.location)
-            return APIData(sorted_predictions(buses, "Minutes"), [])
+            self.routes.update(
+                route
+                for route in (base_route(b.get("RouteID")) for b in buses)
+                if route
+            )
+            return APIData(
+                sorted_predictions(buses, "Minutes"),
+                [],
+                alerts=await self.api.bus_alerts(),
+            )
         except APIAuthError as err:
             raise ConfigEntryAuthFailed("WMATA API key is invalid") from err
         except (APIConnectionError, InvalidLocation) as err:
             raise UpdateFailed(str(err)) from err
+
+    def alerts_for(self, lines=None, routes=None) -> list[dict]:
+        """Alerts for the given lines or routes; by default, all that stop here."""
+        if not self.data:
+            return []
+        if lines is None and routes is None:
+            lines, routes = self.served_lines, self.routes
+        return alerts_for(self.data.alerts, lines or (), routes or ())

@@ -14,13 +14,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from build_release import build
 
 ROOT = Path(__file__).resolve().parents[1]
+NEXT_TRAIN = "sensor.wmata_commute_to_union_station_next_train"
+TRAVEL_TIME = "sensor.wmata_commute_to_union_station_travel_time"
 
 
 async def verify(scenario):
     from homeassistant import loader
     from homeassistant.bootstrap import async_from_config_dict
     from homeassistant.config_entries import ConfigEntry
-    from homeassistant.core import HomeAssistant
+    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+    from homeassistant.core import CoreState, HomeAssistant
     from homeassistant.helpers import device_registry, entity_registry
 
     logging.basicConfig(level=logging.WARNING)
@@ -33,6 +36,10 @@ async def verify(scenario):
                 for name in package.namelist()
             )
             package.extractall(config_dir)
+        # The blueprint is imported by hand in real life; here it is copied in.
+        blueprint = "blueprints/automation/wmata/time_to_leave.yaml"
+        (config_dir / blueprint).parent.mkdir(parents=True)
+        (config_dir / blueprint).write_text((ROOT / blueprint).read_text())
         sys.path.insert(0, folder)
         hass = HomeAssistant(folder)
         loader.async_setup(hass)
@@ -110,10 +117,51 @@ async def verify(scenario):
                         "http": {"server_host": "127.0.0.1", "server_port": 8123},
                         "frontend": {},
                         "lovelace": {"mode": "storage"},
+                        "automation": [
+                            {
+                                "id": "time_to_leave",
+                                "alias": "Time to leave",
+                                "use_blueprint": {
+                                    "path": "wmata/time_to_leave.yaml",
+                                    "input": {
+                                        "next_train": NEXT_TRAIN,
+                                        "travel_time": TRAVEL_TIME,
+                                        "lead_time": 4,
+                                        "start_time": "00:00:00",
+                                        "end_time": "23:59:59",
+                                        "weekdays": [
+                                            "mon",
+                                            "tue",
+                                            "wed",
+                                            "thu",
+                                            "fri",
+                                            "sat",
+                                            "sun",
+                                        ],
+                                        "quiet_period": 0,
+                                        "actions": [
+                                            {
+                                                "event": "wmata_time_to_leave",
+                                                "event_data": {
+                                                    "message": "{{ message }}",
+                                                    "minutes": "{{ minutes }}",
+                                                },
+                                            }
+                                        ],
+                                    },
+                                },
+                            }
+                        ],
                     },
                     hass,
                 )
                 assert result is hass, "HA bootstrap failed"
+                # Automations only attach their triggers once HA reports started.
+                hass.set_state(CoreState.running)
+                hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+                await hass.async_block_till_done()
+                reminders = []
+                hass.bus.async_listen("wmata_time_to_leave", reminders.append)
 
                 async def wait_loaded(entry):
                     await hass.async_block_till_done()
@@ -194,13 +242,38 @@ async def verify(scenario):
                         ).state
                         == "unknown"
                     )
-                    assert not [
-                        e
-                        for e in entity_registry.async_entries_for_config_entry(
-                            entity_registry.async_get(hass), commute.entry_id
-                        )
-                        if e.domain == "binary_sensor"
-                    ]
+                    # The train is 4 minutes out and the blueprint's lead time is
+                    # 4, so the reminder goes out once with both numbers in it.
+                    await hass.async_block_till_done()
+                    assert hass.states.get("automation.time_to_leave") is not None
+                    assert len(reminders) == 1, reminders
+                    assert reminders[0].data["minutes"] == 4
+                    assert " ".join(reminders[0].data["message"].split()) == (
+                        "Time to leave. Your train leaves in 4 min and "
+                        "you'd arrive in about 10 min."
+                    ), reminders[0].data
+                    # The fixture reports a Red Line delay, a bus delay on D34 and
+                    # a broken elevator at Metro Center.
+                    alert = hass.states.get(
+                        "binary_sensor.wmata_metro_center_service_alert"
+                    )
+                    assert alert.state == "on", alert
+                    assert [a["lines"] for a in alert.attributes["alerts"]] == [["RD"]]
+                    board = hass.states.get("sensor.wmata_metro_center_arrivals")
+                    assert len(board.attributes["alerts"]) == 1
+                    assert board.attributes["outages"][0]["type"] == "elevator"
+                    assert (
+                        hass.states.get(
+                            "binary_sensor.wmata_fixture_bus_stop_service_alert"
+                        ).state
+                        == "on"
+                    )
+                    commute_alert = hass.states.get(
+                        "binary_sensor.wmata_commute_service_alert"
+                    )
+                    assert commute_alert.state == "on", commute_alert
+                    assert travel.attributes["alerts"][0]["id"] == "RD-1"
+                    assert travel.attributes["last_train"] is False
                     options = await hass.config_entries.options.async_init(
                         rail.entry_id
                     )
@@ -380,6 +453,41 @@ async def verify(scenario):
                     assert "prediction_count" not in rail.options
                     assert registry.async_get(legacy.entity_id) is None
 
+                if scenario == "clean":
+                    # Move the commute's work station through Reconfigure. The old
+                    # sensors go and new ones appear on the same entry.
+                    moved = await hass.config_entries.flow.async_init(
+                        "wmata",
+                        context={"source": "reconfigure", "entry_id": commute.entry_id},
+                    )
+                    assert moved["step_id"] == "reconfigure", moved
+                    moved = await hass.config_entries.flow.async_configure(
+                        moved["flow_id"], {"home": "A01", "work": "A02"}
+                    )
+                    assert moved["reason"] == "reconfigure_successful", moved
+                    await wait_loaded(commute)
+                    assert commute.title == "Metro Center \u2194 Farragut North"
+                    assert commute.unique_id == "commute:A01:A02"
+                    assert (
+                        hass.states.get(
+                            "sensor.wmata_commute_to_union_station_travel_time"
+                        )
+                        is None
+                    )
+                    assert (
+                        hass.states.get(
+                            "sensor.wmata_commute_to_farragut_north_travel_time"
+                        )
+                        is not None
+                    )
+                    assert (
+                        len(
+                            device_registry.async_entries_for_config_entry(
+                                device_registry.async_get(hass), commute.entry_id
+                            )
+                        )
+                        == 1
+                    )
                 registry = entity_registry.async_get(hass)
                 board_id = (
                     "sensor.wmata_metro_center_arrivals"

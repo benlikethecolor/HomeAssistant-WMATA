@@ -74,6 +74,10 @@ async def async_get_config_entry_diagnostics(
     else:
         arrivals = data.arrivals
         result["updated_at"] = data.updated_at
+        result["alerts"] = {
+            "active": len(data.alerts),
+            "units_out_of_service": len(data.outages),
+        }
         result["arrivals"] = {
             "count": len(arrivals),
             "with_numeric_estimate": sum(

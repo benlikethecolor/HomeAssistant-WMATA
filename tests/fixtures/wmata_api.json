@@ -191,5 +191,72 @@
         "Routes": []
       }
     ]
+  },
+  "Incidents.svc/json/Incidents": {
+    "Incidents": [
+      {
+        "IncidentID": "RD-1",
+        "IncidentType": "Delay",
+        "LinesAffected": "RD;",
+        "DateUpdated": "2026-11-13T08:15:00",
+        "Description": "Red Line: Expect delays to Glenmont due to a signal problem outside Forest Glen.",
+        "DelaySeverity": null,
+        "EmergencyText": null,
+        "PassengerDelay": 0,
+        "StartLocationFullName": null,
+        "EndLocationFullName": null
+      },
+      {
+        "IncidentID": "GR-1",
+        "IncidentType": "Alert",
+        "LinesAffected": "GR; YL;",
+        "DateUpdated": "2026-11-13T08:20:00",
+        "Description": "Green and Yellow Line: Trains are single tracking between Fort Totten and Greenbelt."
+      }
+    ]
+  },
+  "Incidents.svc/json/BusIncidents": {
+    "BusIncidents": [
+      {
+        "IncidentID": "BUS-1",
+        "IncidentType": "Delay",
+        "RoutesAffected": [
+          "D34",
+          "D36"
+        ],
+        "DateUpdated": "2026-11-13T08:13:03",
+        "Description": "D34, D36: Due to traffic congestion, buses are experiencing up to 20 minute delays."
+      }
+    ]
+  },
+  "Incidents.svc/json/ElevatorIncidents": {
+    "ElevatorIncidents": [
+      {
+        "UnitName": "A01E01",
+        "UnitType": "ELEVATOR",
+        "StationCode": "A01",
+        "StationName": "Metro Center, G and 13th St Entrance",
+        "LocationDescription": "Elevator between street and mezzanine",
+        "SymptomDescription": "Service Call",
+        "DateOutOfServ": "2026-11-12T15:17:00",
+        "DateUpdated": "2026-11-13T06:28:30",
+        "EstimatedReturnToService": "2026-11-15T23:59:59",
+        "DisplayOrder": 0,
+        "SymptomCode": null,
+        "TimeOutOfService": "1517",
+        "UnitStatus": null
+      },
+      {
+        "UnitName": "A03N04",
+        "UnitType": "ESCALATOR",
+        "StationCode": "A03",
+        "StationName": "Dupont Circle, Q Street Entrance",
+        "LocationDescription": "Escalator between mezzanine and platform to Shady Grove",
+        "SymptomDescription": "Service Call",
+        "DateOutOfServ": "2026-11-12T15:17:00",
+        "DateUpdated": "2026-11-13T06:28:30",
+        "EstimatedReturnToService": null
+      }
+    ]
   }
 }

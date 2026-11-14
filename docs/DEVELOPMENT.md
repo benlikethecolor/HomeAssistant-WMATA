@@ -7,6 +7,7 @@ Notes for working on the integration itself. If you only want to use it, the [RE
 - `custom_components/wmata/` is the integration. The dashboard cards live in `www/wmata-station-card.js` as a single file with no build step, next to a vendored copy of Leaflet.
 - `tests/` has the Python tests (plain `unittest`) and `test_card.mjs` for the cards.
 - `tools/` has the release packaging, the install check that the tests run, and the map geometry generators.
+- `blueprints/` holds the automation blueprint that the README links to. It isn't part of the release ZIP. People import it from GitHub, so its `source_url` has to keep pointing at the file on `main`.
 - `scripts/` is a handful of standalone scripts for poking at the WMATA API by hand: raw predictions for a station or stop, stops near a point, and a generator for the station lists. They aren't part of the integration and only need the standard library. Set `WMATA_API_KEY` in your environment and run any of them with `--help`.
 
 ## Running the tests
@@ -23,7 +24,7 @@ Leave Docker on its default bridge network. HA's DNS resolver wants a network in
 
 If you'd rather not use Docker, a virtualenv with `homeassistant` installed works as well. Pin a release that supports your Python version. The suite passes that way on Python 3.13 with `homeassistant==2025.6.3`, though that combination also needs `pycares<5`.
 
-The two installation tests are the slow ones and the most useful. They build the release ZIP, unpack it into a temporary config directory, and boot a real Home Assistant against the canned responses in `tests/fixtures/`. One sets everything up from scratch through the config flow. The other starts from a 2.x entry and checks the migration. No API key or real config is involved.
+The two installation tests are the slow ones and the most useful. They build the release ZIP, unpack it into a temporary config directory, and boot a real Home Assistant against the canned responses in `tests/fixtures/`. One sets everything up from scratch through the config flow, moves an entry with Reconfigure, and runs the blueprint as a real automation. The other starts from a 2.x entry and checks the migration. No API key or real config is involved.
 
 Linting, the card tests, and a local ZIP:
 
@@ -100,6 +101,14 @@ A commute entry (`commute.py`) plans both directions on every poll. It collects 
 The arrival estimate itself is `estimates.py`, a Python port of the card's connection calculator. Two implementations of the same rules will drift unless something holds them together, so `tests/fixtures/estimates.json` lists scenarios as minute offsets and both `tests/test_estimates.py` and `tests/test_card.mjs` run every one of them. When you change how connections are worked out, change both and add a scenario.
 
 The sensors always follow the route with the earliest estimated arrival. There is no per-train selection as there is on the card.
+
+### Service alerts
+
+`alerts.py` turns WMATA's three incident feeds (rail, bus, and elevator and escalator outages) into small dictionaries. They are advisory, so the API methods for them never raise. A failed request keeps the last known alerts and tries again in a minute, and a key without access to the feeds gets an empty list instead of a re-authentication prompt.
+
+Each feed is cached per API key, a minute for incidents and five for outages, so the number of requests doesn't grow with the number of stations. Rail incidents are matched by line. A station shows the ones for the lines that serve it, and a station-to-station journey or commute shows the ones for every line on its route, including lines it transfers to. Bus incidents are matched by route, using the routes that have been seen at the stop since startup.
+
+"Last train" comes from the prediction feed, which labels the final train. Nothing is worked out from the timetable.
 
 ### Requests and caching
 

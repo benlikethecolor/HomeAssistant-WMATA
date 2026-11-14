@@ -8,6 +8,7 @@ from homeassistant.auth.permissions.const import POLICY_READ
 from homeassistant.components import websocket_api
 from homeassistant.helpers import entity_registry as er
 
+from .alerts import alerts_for
 from .api import APIAuthError, APIConnectionError
 from .connections import ride_minutes
 from .const import CONF_JOURNEYS, DOMAIN, STATION_CODE_MAP, station_codes
@@ -296,6 +297,7 @@ async def trip_alternatives(hass, api, routes, station_data=None, timetable=True
         timetable=timetable,
     )
     by_leg = dict(zip(unique, shared, strict=True))
+    alerts = await api.rail_alerts()
     alternatives = []
     for route in routes:
         legs = [
@@ -311,6 +313,10 @@ async def trip_alternatives(hass, api, routes, station_data=None, timetable=True
                 ),
                 "route": route,
                 "route_description": describe_route(route),
+                "alerts": alerts_for(
+                    alerts,
+                    {line for leg in route["legs"] for line in leg["lines"]},
+                ),
                 "legs": legs,
                 "scheduled_ride_minutes": sum(durations)
                 if all(value is not None for value in durations)

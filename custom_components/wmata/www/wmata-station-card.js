@@ -49,6 +49,48 @@ const appearanceChoices = (current) =>
     if (text !== undefined) node.textContent = String(text);
     return node;
   };
+  // Service alerts and broken elevators, drawn the same way on every card.
+  const alertList = (alerts, outages) => {
+    const shown = (Array.isArray(alerts) ? alerts : []).filter(
+      (alert) => alert && typeof alert.description === "string",
+    );
+    const elevators = (Array.isArray(outages) ? outages : []).filter(
+      (unit) => unit?.type === "elevator",
+    );
+    if (!shown.length && !elevators.length) return null;
+    const list = element("div", "alerts");
+    list.setAttribute("role", "status");
+    for (const alert of shown.slice(0, 4)) {
+      const names = [
+        ...(alert.lines || []).map((code) => COLORS[code]?.[0] || code),
+        ...(alert.routes || []),
+      ];
+      const item = element("div", "alert");
+      item.append(
+        element(
+          "strong",
+          null,
+          (alert.type === "delay" ? "Delay" : "Alert") +
+            (names.length ? " · " + names.join(", ") : ""),
+        ),
+        element("span", null, alert.description),
+      );
+      list.append(item);
+    }
+    if (shown.length > 4)
+      list.append(
+        element("div", "alert more", `${shown.length - 4} more alerts`),
+      );
+    for (const unit of elevators) {
+      const item = element("div", "alert outage");
+      item.append(
+        element("strong", null, "Elevator out of service"),
+        element("span", null, unit.location || "Location not given"),
+      );
+      list.append(item);
+    }
+    return list;
+  };
   const isList = (v) =>
     Array.isArray(v) && v.every((x) => typeof x === "string");
   const routeKey = (a) => a.line || a.route || "OTHER";
@@ -90,6 +132,9 @@ const appearanceChoices = (current) =>
     .journey-eta{margin:0 22px 16px;padding:12px;border:1px solid var(--divider-color,#e2e7eb);border-radius:12px}.journey-eta-heading{font-size:12px;color:var(--secondary-text-color,#64717b);margin-bottom:5px}.journey-eta-time{font-size:22px;font-weight:650;line-height:1.4}.journey-eta-details{font-size:11px;line-height:1.6;color:var(--secondary-text-color,#64717b);margin-top:4px}
     .connection-summary{font-size:12px;line-height:1.6;margin:0 0 10px;color:var(--secondary-text-color,#64717b)}.connection-label{font-size:11px;font-weight:600;margin-top:5px}.arrival[data-connection=likely]{background:color-mix(in srgb,var(--success-color,#278057) 12%,transparent);border-radius:8px;padding-left:8px;padding-right:8px}.arrival[data-connection=likely] .connection-label{color:var(--success-color,#278057)}.arrival[data-connection=early] .connection-label{color:var(--secondary-text-color,#64717b)}
     .leg-heading{padding:0 22px 12px;font-size:13px;font-weight:600;line-height:1.5}.journey-transfers{border-top:1px solid var(--divider-color,#e2e7eb);padding:16px 22px}.transfer-note{font-size:12px;line-height:1.5;color:var(--secondary-text-color,#64717b);margin:0 0 14px}.transfer-station{margin-top:16px}.transfer-title{font-size:14px;font-weight:600;line-height:1.5;margin:0 0 8px}.transfer-status,.transfer-updated{font-size:11px;color:var(--secondary-text-color,#64717b);line-height:1.5}.transfer-updated{margin-top:8px}.transfer-updated[data-stale=true]{color:var(--warning-color,#9a660d)}
+    .alerts{margin:0 22px 14px;display:grid;gap:8px}.alert{display:grid;gap:3px;padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.5;background:color-mix(in srgb,var(--warning-color,#b8860b) 14%,transparent);border-left:3px solid var(--warning-color,#b8860b)}.alert strong{font-size:11px;letter-spacing:.3px}.alert.more{border-left:0;background:none;padding:0 2px;color:var(--secondary-text-color,#64717b)}.planner-form .alerts{margin:12px 0 0}
+    :host([data-appearance=native]) .alerts,:host([data-appearance=minimal]) .alerts{margin-left:16px;margin-right:16px}:host([data-appearance=native]) .planner-form .alerts{margin-left:0;margin-right:0}
+    .last-train{display:inline-block;margin-top:5px;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:.5px;background:color-mix(in srgb,var(--warning-color,#b8860b) 22%,transparent)}
     .journey-route{margin:0 22px 14px;padding:12px;border-radius:12px;background:var(--secondary-background-color,#eff3f5);font-size:13px;line-height:1.5}.journey-route small{display:block;margin-top:4px;color:var(--secondary-text-color,#64717b)}
     :host([data-appearance=native]){font-family:var(--ha-font-family-body,Roboto,system-ui,sans-serif)}
     :host([data-appearance=native]) ha-card{border-radius:var(--ha-card-border-radius,12px);box-shadow:var(--ha-card-box-shadow,none);border-width:var(--ha-card-border-width,1px);border-color:var(--ha-card-border-color,var(--divider-color,#e0e0e0));background:var(--ha-card-background,var(--card-background-color,#fff))}
@@ -156,7 +201,11 @@ const appearanceChoices = (current) =>
           config.transfer_rows > 10)
       )
         throw new Error("transfer_rows must be an integer between 1 and 10.");
-      for (const key of ["show_transfer_predictions", "show_destination_eta"])
+      for (const key of [
+        "show_transfer_predictions",
+        "show_destination_eta",
+        "show_alerts",
+      ])
         if (config[key] !== undefined && typeof config[key] !== "boolean")
           throw new Error(`${key} must be true or false`);
       if (
@@ -185,6 +234,7 @@ const appearanceChoices = (current) =>
         max_rows: 8,
         show_filters: true,
         show_updated: true,
+        show_alerts: true,
         show_transfer_predictions: true,
         show_destination_eta: true,
         transfer_rows: 3,
@@ -1037,6 +1087,21 @@ const appearanceChoices = (current) =>
       );
       header.append(mark, heading, live);
       card.append(header);
+      if (this._config.show_alerts) {
+        // A card pinned to certain lines or routes only shows their alerts.
+        const pinned = (alert) =>
+          (!this._config.lines?.length ||
+            !alert.lines?.length ||
+            alert.lines.some((line) => this._config.lines.includes(line))) &&
+          (!this._config.routes?.length ||
+            !alert.routes?.length ||
+            alert.routes.some((route) => this._config.routes.includes(route)));
+        const alerts = alertList(
+          Array.isArray(attrs.alerts) ? attrs.alerts.filter(pinned) : [],
+          attrs.outages,
+        );
+        if (alerts) card.append(alerts);
+      }
       if (attrs.journey_route && attrs.route_description) {
         const route = element("div", "journey-route", attrs.route_description);
         route.append(
@@ -1277,12 +1342,13 @@ const appearanceChoices = (current) =>
               ? " · boards " + this._clock(Date.parse(a.departure_at))
               : ""),
         );
-      if (a.last_train) details.push("Last train");
       if (a.line) details.push(a.direction || "Direction unavailable");
       if (a.cars && a.cars !== "-") details.push(`${a.cars} cars`);
       if (a.vehicle_id) details.push(`Bus ${a.vehicle_id}`);
       if (details.length)
         info.append(element("div", "details", details.join(" · ")));
+      if (a.last_train)
+        info.append(element("div", "last-train", "LAST TRAIN TONIGHT"));
       if (originChoice) {
         const choose = element(
           "button",
@@ -1369,6 +1435,7 @@ const appearanceChoices = (current) =>
         max_rows: 8,
         show_filters: true,
         show_updated: true,
+        show_alerts: true,
         show_transfer_predictions: true,
         show_destination_eta: true,
         transfer_rows: 3,
@@ -1408,6 +1475,7 @@ const appearanceChoices = (current) =>
           },
           { name: "show_filters", selector: { boolean: {} } },
           { name: "show_updated", selector: { boolean: {} } },
+          { name: "show_alerts", selector: { boolean: {} } },
         ];
         this._form.computeLabel = ({ name }) =>
           ({
@@ -1421,6 +1489,7 @@ const appearanceChoices = (current) =>
             max_rows: "Maximum arrivals",
             show_filters: "Show line, direction and destination filters",
             show_updated: "Show update time",
+            show_alerts: "Show service alerts and elevator outages",
           })[name] || name;
         this._form.addEventListener("value-changed", (event) => {
           event.stopPropagation();
@@ -1768,12 +1837,14 @@ const appearanceChoices = (current) =>
       this._status = element("div", "status", "Loading station names…");
       this._status.setAttribute("role", "status");
       this._scheduled = element("div", "scheduled");
+      this._alertHost = element("div", "planner-alerts");
       this._routeOptions = element("section", "route-options");
       this._routeOptions.setAttribute("aria-label", "Route comparison");
       form.append(
         this._search,
         this._list,
         this._status,
+        this._alertHost,
         this._scheduled,
         this._routeOptions,
       );
@@ -1798,6 +1869,7 @@ const appearanceChoices = (current) =>
       this._board?.remove();
       this._board = null;
       this._scheduled.textContent = "";
+      this._alertHost.replaceChildren();
       this._routeOptions.replaceChildren();
       this._chosenRouteId = null;
       this._activeRouteId = null;
@@ -2091,6 +2163,9 @@ const appearanceChoices = (current) =>
         selected.estimate.recommended_origin,
       );
       const changes = selected.option.route.legs.length - 1;
+      // Alerts for the lines on the route being shown, not every route.
+      const alerts = alertList(selected.option.alerts);
+      this._alertHost.replaceChildren(...(alerts ? [alerts] : []));
       this._scheduled.textContent = Number.isFinite(
         selected.option.scheduled_ride_minutes,
       )

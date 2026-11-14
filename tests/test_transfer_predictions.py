@@ -18,6 +18,7 @@ def fixture(route=None):
     route = route or plan_journey("C04", "B35")
     api = SimpleNamespace(
         _state=object(),
+        rail_alerts=AsyncMock(return_value=[]),
         rail_schedule=AsyncMock(return_value=None),
         rail_times=AsyncMock(
             return_value={("C04", "C03"): 2, ("C03", "C02"): 1, ("C02", "C01"): 1}

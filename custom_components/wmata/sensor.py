@@ -68,7 +68,9 @@ class WmataBoardSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
     _attr_has_entity_name = True
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_device_class = SensorDeviceClass.DURATION
-    _unrecorded_attributes = frozenset({"arrivals", "updated_at", "next_arrival"})
+    _unrecorded_attributes = frozenset(
+        {"arrivals", "updated_at", "next_arrival", "alerts", "outages"}
+    )
 
     def __init__(self, coordinator) -> None:
         super().__init__(coordinator)
@@ -95,6 +97,11 @@ class WmataBoardSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
         return self.coordinator.data.arrivals if self.coordinator.data else []
 
     @property
+    def alerts(self) -> list[dict]:
+        """Service alerts for the lines or routes that stop here."""
+        return self.coordinator.alerts_for()
+
+    @property
     def native_value(self) -> int | None:
         return next(
             (a["minutes"] for a in self.arrivals if a["minutes"] is not None), None
@@ -117,6 +124,8 @@ class WmataBoardSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
             "arrival_count": len(arrivals),
             "served_lines": self.coordinator.served_lines,
             "next_arrival": arrivals[0] if arrivals else None,
+            "alerts": self.alerts,
+            "outages": self.coordinator.data.outages if self.coordinator.data else [],
             "updated_at": self.coordinator.data.updated_at
             if self.coordinator.data
             else None,
@@ -146,6 +155,19 @@ class WmataJourneySensor(WmataBoardSensor):
     @property
     def arrivals(self) -> list[dict]:
         return filter_arrivals(super().arrivals, self.journey)
+
+    @property
+    def alerts(self) -> list[dict]:
+        """A journey cares about its own lines, including ones it transfers to."""
+        route = self.journey.get("route")
+        if route:
+            lines = {line for leg in route["legs"] for line in leg["lines"]}
+            return self.coordinator.alerts_for(lines=lines)
+        if self.journey.get("lines") or self.journey.get("routes"):
+            return self.coordinator.alerts_for(
+                lines=self.journey.get("lines"), routes=self.journey.get("routes")
+            )
+        return super().alerts
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -207,7 +229,7 @@ class WmataCommuteSensor(CoordinatorEntity, SensorEntity):
     """Estimated trip between two stations, usable in automations."""
 
     _attr_has_entity_name = True
-    _unrecorded_attributes = frozenset({"updated_at", "first_train"})
+    _unrecorded_attributes = frozenset({"updated_at", "first_train", "alerts"})
 
     def __init__(self, coordinator, direction, kind) -> None:
         super().__init__(coordinator)
@@ -290,6 +312,8 @@ class WmataCommuteSensor(CoordinatorEntity, SensorEntity):
             ),
             # True when part of the trip relies on the timetable, not live trains.
             "schedule_estimate": trip.get("schedule_estimate"),
+            "last_train": bool(train.get("last_train")),
+            "alerts": trip.get("alerts", []),
             "transfer_buffer": self.coordinator.buffer,
             "updated_at": self.coordinator.data["updated_at"]
             if self.coordinator.data
