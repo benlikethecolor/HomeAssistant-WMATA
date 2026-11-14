@@ -22,8 +22,7 @@ async def verify(scenario):
     from homeassistant import loader
     from homeassistant.bootstrap import async_from_config_dict
     from homeassistant.config_entries import ConfigEntry
-    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
-    from homeassistant.core import CoreState, HomeAssistant
+    from homeassistant.core import HomeAssistant
     from homeassistant.helpers import device_registry, entity_registry
 
     logging.basicConfig(level=logging.WARNING)
@@ -156,9 +155,8 @@ async def verify(scenario):
                     hass,
                 )
                 assert result is hass, "HA bootstrap failed"
-                # Automations only attach their triggers once HA reports started.
-                hass.set_state(CoreState.running)
-                hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+                # Run startup jobs so automation triggers attach on every HA version.
+                await hass.async_start()
                 await hass.async_block_till_done()
                 reminders = []
                 hass.bus.async_listen("wmata_time_to_leave", reminders.append)
