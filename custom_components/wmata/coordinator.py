@@ -1,141 +1,164 @@
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, STATION_CODE_MAP, URL
-from dataclasses import dataclass
-from datetime import timedelta
+"""Poll predictions once per station/stop for all its sensors."""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, CONF_ID
-from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-import logging
-import aiohttp
+
+from .alerts import alerts_for, base_route
+from .api import APIAuthError, APIConnectionError, InvalidLocation, WmataApi
+from .const import (
+    CONF_INTERVAL,
+    CONF_SERVICE_TYPE,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    LINE_NAME_MAP,
+    STATION_CODE_MAP,
+    station_codes,
+)
+from .predictions import normalize_prediction, prediction_minutes
 
 _LOGGER = logging.getLogger(__name__)
 
-CONF_SERVICE_TYPE = "service_type"
+
+def sorted_predictions(items: list[dict], field: str) -> list[dict]:
+    """Order both platforms by arrival time, unknown estimates last."""
+    return sorted(
+        items,
+        key=lambda item: (
+            prediction_minutes(item.get(field)) is None,
+            prediction_minutes(item.get(field)) or 0,
+        ),
+    )
 
 
 @dataclass
 class APIData:
-    """Class to hold api data"""
-    next_buses: list
-    next_trains: list
+    next_buses: list[dict]
+    next_trains: list[dict]
+    updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    # Every current alert for this service, and this station's broken units.
+    alerts: list[dict] = field(default_factory=list)
+    outages: list[dict] = field(default_factory=list)
+
+    @property
+    def arrivals(self) -> list[dict]:
+        service = "train" if self.next_trains else "bus"
+        return [
+            normalize_prediction(raw, service)
+            for raw in self.next_trains or self.next_buses
+        ]
 
 
-class WmataCoordinator(DataUpdateCoordinator):
-    """Base coordinator class"""
+class WmataCoordinator(DataUpdateCoordinator[APIData]):
+    """One managed client and update loop per configured location."""
 
-    data: APIData
-
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
-        """Initialize coordinator class"""
-
-        # Set variables from values entered in config flow setup
-        self.unique_id = config_entry.entry_id
-        self.api_key = config_entry.data[CONF_API_KEY]
+    def __init__(self, hass, config_entry: ConfigEntry) -> None:
         self.service_type = config_entry.data[CONF_SERVICE_TYPE]
-        self.headers = {"api_key": self.api_key}
-
-        # bus settings
-        if self.service_type == "bus":
-            self.bus_stop = config_entry.data[CONF_ID]
-            self.bus_stop_name = None
-
-        # train settings
-        elif self.service_type == "train":
-            self.station = config_entry.data[CONF_ID]
-            self.station_name = STATION_CODE_MAP[self.station]
-
-        self.connected: bool = False
-        _LOGGER.debug(f"API key: {self.api_key}")
-        _LOGGER.debug(f"API key type: {type(self.api_key)}")
-
-        # set variables from options.  You need a default here incase options have not been set
-        self.poll_interval = DEFAULT_SCAN_INTERVAL  # default to 1min
-
-        # Initialize DataUpdateCoordinator
+        self.location = config_entry.data[CONF_ID]
+        self.location_name = config_entry.data.get(
+            "location_name", STATION_CODE_MAP.get(self.location, self.location)
+        )
+        self.codes = config_entry.data.get(
+            "station_codes", station_codes(self.location)
+        )
+        self.served_lines = config_entry.data.get("served_lines", [])
+        self.api = WmataApi(
+            async_get_clientsession(hass), config_entry.data[CONF_API_KEY], hass=hass
+        )
+        self._metadata_loaded = False
+        # Bus routes seen at this stop, so alerts still match between buses.
+        self.routes: set[str] = set()
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN}",
-            update_method=self.async_update_data,
-            update_interval=timedelta(seconds=self.poll_interval),
+            name=f"{DOMAIN}_{self.location}",
+            config_entry=config_entry,
+            update_interval=timedelta(
+                seconds=config_entry.options.get(CONF_INTERVAL, DEFAULT_SCAN_INTERVAL)
+            ),
         )
 
-        # data formats:
-        # next_buses = [{"RouteID": "S2", "DirectionText": "North to Silver Spring", "DirectionNum": "0", "Minutes": 3, "VehicleID": "5508", "TripID": "13291060"}, ...]
-        # next_trains = [{"Destination": "Glenmont", "Line": "Red", "LocationName": "Glenmont", "Min": 3}, ...]
-        self.next_buses = []
-        self.next_trains = []
-
-    async def async_initialize(self):
-        """Asynchronously initialize additional attributes."""
-        if self.service_type == "bus":
-            self.bus_stop_name = await self.async_get_bus_stop_name(self.bus_stop)
-
-    async def async_validate_api_key(self) -> bool:
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://api.wmata.com/Misc/Validate", headers=self.headers) as response:
-                _LOGGER.debug(
-                    f"API key validation response code: {response.status}")
-                _LOGGER.debug(f"API key validation response: {response}")
-
-                if response.status == 200:
-                    _LOGGER.debug("API key successfully validated")
-                    self.connected = True
-
-                    return True
-
-                raise APIAuthError("Invalid API key")
-
-    async def async_update_data(self):
-        """Fetch data from API endpoint.
-
-        This is the place to pre-process the data to lookup tables
-        so entities can quickly look up their data.
-        """
-
+    async def _async_update_data(self) -> APIData:
         try:
-            if not self.connected:
-                await self.async_validate_api_key()
-
+            if not self._metadata_loaded:
+                if self.service_type == "bus":
+                    self.location_name = await self.api.stop_name(self.location)
+                else:
+                    stations = await self.api.stations()
+                    selected = next(
+                        (s for s in stations if s.get("Code") == self.location), None
+                    )
+                    if not selected:
+                        raise InvalidLocation("Unknown station")
+                    self.location_name = selected["Name"]
+                    # WMATA publishes together codes for transfer station platforms.
+                    self.codes = list(
+                        dict.fromkeys(
+                            [
+                                *self.codes,
+                                *[
+                                    selected[k]
+                                    for k in ("StationTogether1", "StationTogether2")
+                                    if selected.get(k)
+                                ],
+                            ]
+                        )
+                    )
+                    self.served_lines = sorted(
+                        {
+                            s[k]
+                            for s in stations
+                            if s.get("Code") in self.codes
+                            for k in (
+                                "LineCode1",
+                                "LineCode2",
+                                "LineCode3",
+                                "LineCode4",
+                            )
+                            if s.get(k) in LINE_NAME_MAP
+                        }
+                    )
+                self._metadata_loaded = True
             if self.service_type == "train":
-                next_trains = await self.async_get_next_trains_at_station(self.station)
-                return APIData(next_trains=next_trains, next_buses=[])
-            elif self.service_type == "bus":
-                next_buses = await self.async_get_next_buses_at_stop(self.bus_stop)
-                return APIData(next_buses=next_buses, next_trains=[])
-
+                trains = await self.api.trains(self.codes)
+                return APIData(
+                    [],
+                    sorted_predictions(trains, "Min"),
+                    alerts=await self.api.rail_alerts(),
+                    outages=[
+                        unit
+                        for unit in await self.api.unit_outages()
+                        if unit["station_code"] in self.codes
+                    ],
+                )
+            buses = await self.api.buses(self.location)
+            self.routes.update(
+                route
+                for route in (base_route(b.get("RouteID")) for b in buses)
+                if route
+            )
+            return APIData(
+                sorted_predictions(buses, "Minutes"),
+                [],
+                alerts=await self.api.bus_alerts(),
+            )
         except APIAuthError as err:
-            _LOGGER.error(err)
-            raise UpdateFailed(err) from err
+            raise ConfigEntryAuthFailed("WMATA API key is invalid") from err
+        except (APIConnectionError, InvalidLocation) as err:
+            raise UpdateFailed(str(err)) from err
 
-        except Exception as err:
-            # this will show entities as unavailable by raising UpdateFailed exception
-            raise UpdateFailed(f"Error communicating with API: {err}") from err
-
-    async def async_get_next_trains_at_station(self, station_code: str) -> list:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{URL}/StationPrediction.svc/json/GetPrediction/{station_code}", headers=self.headers) as response:
-                train_predictions = await response.json()
-
-                return train_predictions["Trains"]
-
-    async def async_get_next_buses_at_stop(self, stop_code: str) -> list:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{URL}/NextBusService.svc/json/jPredictions?StopID={stop_code}", headers=self.headers) as response:
-                bus_predictions = await response.json()
-
-                return bus_predictions["Predictions"]
-
-    async def async_get_bus_stop_name(self, stop_code: str) -> str:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{URL}/Bus.svc/json/jStopSchedule?StopID={stop_code}", headers=self.headers) as response:
-                stop_schedule = await response.json()
-                return stop_schedule["Stop"]["Name"]
-
-
-class APIAuthError(Exception):
-    """Exception class for auth error."""
-
-
-class APIConnectionError(Exception):
-    """Exception class for connection error."""
+    def alerts_for(self, lines=None, routes=None) -> list[dict]:
+        """Alerts for the given lines or routes; by default, all that stop here."""
+        if not self.data:
+            return []
+        if lines is None and routes is None:
+            lines, routes = self.served_lines, self.routes
+        return alerts_for(self.data.alerts, lines or (), routes or ())

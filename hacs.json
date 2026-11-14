@@ -1,5 +1,5 @@
 {
-    "name": "WMATA",
-    "homeassistant": "2024.12.0",
-    "render_readme": true
+  "name": "WMATA",
+  "homeassistant": "2024.12.5",
+  "render_readme": true
 }

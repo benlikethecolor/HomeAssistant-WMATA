@@ -1,95 +1,63 @@
-"""The wmata integration."""
+"""WMATA rail and bus arrivals."""
 
-from __future__ import annotations
-from .const import DOMAIN
-from .coordinator import WmataCoordinator
-from collections.abc import Callable
-from dataclasses import dataclass
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.device_registry import DeviceEntry
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers import config_validation as cv
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+from .commute import CommuteCoordinator
+from .const import CONF_JOURNEYS, DOMAIN
+from .coordinator import WmataCoordinator
+from .frontend import async_setup_card
+from .train_map import MapCoordinator
+from .websocket import async_register
 
-
-@dataclass
-class RuntimeData:
-    """Class to hold your data."""
-
-    coordinator: DataUpdateCoordinator
-    cancel_update_listener: Callable
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
-async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
-    """Set up WMATA Integration from a config entry."""
+async def async_setup(hass, config) -> bool:
+    """Register the bundled dashboard card once for this integration."""
+    async_register(hass)
+    await async_setup_card(hass)
+    return True
 
-    # data location
-    hass.data.setdefault(DOMAIN, {})
 
-    # initialize the coordinator that manages data updates
-    coordinator = WmataCoordinator(hass, config_entry)
+async def async_migrate_entry(hass, entry) -> bool:
+    """Replace numbered slots with a complete board; preserve locations and keys."""
+    if entry.version > 2:
+        return False
+    if entry.version == 1:
+        data = {
+            k: v
+            for k, v in entry.data.items()
+            if k not in ("lines", "routes", "prediction_count")
+        }
+        options = {
+            k: v
+            for k, v in entry.options.items()
+            if k not in ("lines", "routes", "prediction_count")
+        }
+        options.setdefault(CONF_JOURNEYS, [])
+        hass.config_entries.async_update_entry(
+            entry, data=data, options=options, version=2
+        )
+    return True
 
-    # initial data load from API
-    # async_config_entry_first_refresh -> no errors logged on failure
+
+async def async_setup_entry(hass, entry) -> bool:
+    """Load predictions before forwarding platform setup."""
+    coordinator = {"map": MapCoordinator, "commute": CommuteCoordinator}.get(
+        entry.data["service_type"], WmataCoordinator
+    )(hass, entry)
     await coordinator.async_config_entry_first_refresh()
-
-    # test to see if api initialized correctly, else raise ConfigEntryNotReady to make HA retry setup
-    if not coordinator.connected:
-        raise ConfigEntryNotReady
-
-    # initialize a listener for config flow options changes
-    # see config_flow for defining an options setting that shows up as configure on the integration
-    cancel_update_listener = config_entry.add_update_listener(
-        _async_update_listener)
-
-    # add the coordinator and update listener to hass data to make accessible throughout your integration
-    hass.data[DOMAIN][config_entry.entry_id] = RuntimeData(
-        coordinator, cancel_update_listener)
-
-    # setup platforms (based on the list of entity types in PLATFORMS defined above)
-    # this calls the async_setup method in each of your entity type files
-    await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
-
+    entry.runtime_data = coordinator
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
-async def _async_update_listener(hass: HomeAssistant, config_entry):
-    """Handle config options update."""
-    # Unload the existing entry
-    await hass.config_entries.async_unload(config_entry.entry_id)
-    # Reload the entry to apply the new configuration
-    await hass.config_entries.async_setup(config_entry.entry_id)
-    await hass.config_entries.async_reload(config_entry.entry_id)
+async def _async_update_listener(hass, entry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_remove_config_entry_device(hass: HomeAssistant, config_entry: ConfigEntry, device_entry: DeviceEntry) -> bool:
-    """Delete device if selected from UI."""
-    # adding this function shows the delete device option in the UI
-    # you may need to do some checks here before allowing devices to be removed
-
-    # TODO: no devices, is this needed?
-    return True
-
-
-async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    # this is called when you remove your integration or shutdown HA
-    # if you have created any custom services, they need to be removed here too
-
-    # remove the config options update listener
-    hass.data[DOMAIN][config_entry.entry_id].cancel_update_listener()
-
-    # unload platforms
-    unload_ok = await hass.config_entries.async_unload_platforms(
-        config_entry, PLATFORMS
-    )
-
-    # remove the config entry from the hass data object
-    if unload_ok:
-        hass.data[DOMAIN].pop(config_entry.entry_id)
-
-    # return that unloading was successful
-    return unload_ok
+async def async_unload_entry(hass, entry) -> bool:
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

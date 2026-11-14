@@ -1,30 +1,31 @@
-import json
-import os
-import requests
+"""Print the name WMATA has on file for a bus stop.
+
+python scripts/get_bus_stop_name.py 1001195
+python scripts/get_bus_stop_name.py 1001195 --raw
+"""
+
+import argparse
+import sys
+
+from _api import get, show
 
 
-api_key = os.environ['wmata_api']
-
-HEADERS = {
-    "api_key": api_key
-}
-
-
-def get_bus_stop_name(bus_stop: str):
-    output = requests.get(
-        headers=HEADERS,
-        url="http://api.wmata.com/Bus.svc/json/jStopSchedule?StopID=%s" % (
-            bus_stop)
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("stop", help="seven-digit stop ID from the sign at the stop")
+    parser.add_argument(
+        "--raw", action="store_true", help="print the whole schedule response"
     )
+    args = parser.parse_args()
+    data = get("Bus.svc/json/jStopSchedule", StopID=args.stop)
+    if args.raw:
+        show(data)
+        return
+    name = (data.get("Stop") or {}).get("Name")
+    if not name:
+        sys.exit(f"WMATA doesn't have a stop with the ID {args.stop}.")
+    print(name)
 
-    print(json.dumps(output.json(), indent=4))
 
-    print(output.json()['Stop']['Name'])
-
-
-def main():
-    get_bus_stop_name("6000305")
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

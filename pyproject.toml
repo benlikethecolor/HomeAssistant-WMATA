@@ -1,0 +1,12 @@
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+include = [
+    "custom_components/wmata/**/*.py",
+    "scripts/**/*.py",
+    "tests/**/*.py",
+    "tools/**/*.py",
+]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]

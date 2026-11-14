@@ -1,0 +1,2 @@
+# Preserve upstream Leaflet line endings without false whitespace errors.
+custom_components/wmata/www/vendor/* whitespace=cr-at-eol
