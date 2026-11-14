@@ -17,6 +17,8 @@ REQUIRED = {
     "websocket.py",
     "station_predictions.py",
     "connections.py",
+    "commute.py",
+    "estimates.py",
     "schedules.py",
     "geo_shapes.json",
     "route_shapes.json",

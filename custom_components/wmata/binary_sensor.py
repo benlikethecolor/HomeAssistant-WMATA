@@ -8,7 +8,7 @@ from .sensor import WmataBoardSensor
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    if entry.data["service_type"] != "map":
+    if entry.data["service_type"] in ("train", "bus"):
         async_add_entities([WmataDueSoonSensor(entry.runtime_data, entry)])
 
 

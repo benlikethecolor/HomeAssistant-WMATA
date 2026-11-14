@@ -3,6 +3,7 @@
 from homeassistant.const import Platform
 from homeassistant.helpers import config_validation as cv
 
+from .commute import CommuteCoordinator
 from .const import CONF_JOURNEYS, DOMAIN
 from .coordinator import WmataCoordinator
 from .frontend import async_setup_card
@@ -44,8 +45,8 @@ async def async_migrate_entry(hass, entry) -> bool:
 
 async def async_setup_entry(hass, entry) -> bool:
     """Load predictions before forwarding platform setup."""
-    coordinator = (
-        MapCoordinator if entry.data["service_type"] == "map" else WmataCoordinator
+    coordinator = {"map": MapCoordinator, "commute": CommuteCoordinator}.get(
+        entry.data["service_type"], WmataCoordinator
     )(hass, entry)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator

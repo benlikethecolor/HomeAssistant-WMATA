@@ -1,17 +1,22 @@
 const WMATA_APPEARANCES = [
-  { value: "standard", label: "Standard" },
   { value: "native", label: "Home Assistant" },
+  { value: "standard", label: "Departure board" },
   { value: "minimal", label: "Minimal" },
-  { value: "mushroom", label: "Mushroom-inspired" },
   { value: "glass", label: "Glass" },
   { value: "daylight", label: "Daylight" },
-  { value: "orbit", label: "Orbit" },
-  { value: "bento", label: "Bento" },
 ];
+// Earlier presets still render for dashboards that name them, but aren't offered.
+const WMATA_RETIRED_APPEARANCES = ["mushroom", "orbit", "bento"];
+const WMATA_DEFAULT_APPEARANCE = "native";
 const validAppearance = (value) =>
-  WMATA_APPEARANCES.some((option) => option.value === value);
+  WMATA_APPEARANCES.some((option) => option.value === value) ||
+  WMATA_RETIRED_APPEARANCES.includes(value);
+const appearanceChoices = (current) =>
+  WMATA_RETIRED_APPEARANCES.includes(current)
+    ? [...WMATA_APPEARANCES, { value: current, label: `${current} (retired)` }]
+    : WMATA_APPEARANCES;
 
-/* WMATA Station Board 4.0.0 — no external libraries or network requests. */
+/* Station board and trip planner. No external libraries; data comes from HA. */
 (() => {
   const COLORS = {
     BL: ["Blue", "#0076be", "#fff"],
@@ -107,6 +112,7 @@ const validAppearance = (value) =>
       super();
       this.attachShadow({ mode: "open" });
       this._line = "all";
+      this._direction = "all";
       this._destination = "all";
     }
     setConfig(config) {
@@ -123,7 +129,7 @@ const validAppearance = (value) =>
           config.max_rows > 30)
       )
         throw new Error("max_rows must be an integer between 1 and 30.");
-      for (const key of ["lines", "routes", "destinations"])
+      for (const key of ["lines", "routes", "destinations", "directions"])
         if (config[key] !== undefined && !isList(config[key]))
           throw new Error(`${key} must be a list of strings.`);
       if (
@@ -149,6 +155,7 @@ const validAppearance = (value) =>
         this._stopTransferPolling();
         this._originSelection = null;
         this._line = "all";
+        this._direction = "all";
         this._destination = "all";
       }
       if (
@@ -156,7 +163,7 @@ const validAppearance = (value) =>
         !validAppearance(config.appearance)
       )
         throw new Error("Choose a supported appearance preset.");
-      this.dataset.appearance = config.appearance || "standard";
+      this.dataset.appearance = config.appearance || WMATA_DEFAULT_APPEARANCE;
       this._config = {
         max_rows: 8,
         show_filters: true,
@@ -240,7 +247,19 @@ const validAppearance = (value) =>
           (!this._config.routes?.length ||
             this._config.routes.includes(a.route)) &&
           (!this._config.destinations?.length ||
-            this._config.destinations.includes(a.destination_code)),
+            this._config.destinations.includes(a.destination_code)) &&
+          (!this._config.directions?.length ||
+            this._config.directions.some(
+              (direction) =>
+                direction.toLowerCase() === String(a.direction).toLowerCase(),
+            )),
+      );
+    }
+    _passesFilters(a) {
+      return (
+        (this._line === "all" || routeKey(a) === this._line) &&
+        (this._direction === "all" || a.direction === this._direction) &&
+        (this._destination === "all" || destinationKey(a) === this._destination)
       );
     }
     _badge(node, key, text) {
@@ -778,9 +797,7 @@ const validAppearance = (value) =>
             (a.prediction_source === "schedule" ||
               (state?.state !== "unavailable" &&
                 this._fresh(state?.attributes))) &&
-            (this._line === "all" || routeKey(a) === this._line) &&
-            (this._destination === "all" ||
-              destinationKey(a) === this._destination),
+            this._passesFilters(a),
         )
         .map((arrival) => ({
           arrival,
@@ -1080,11 +1097,49 @@ const validAppearance = (value) =>
           });
           chips.append(chip);
         }
+        // "Toward downtown" is easier to think about than a terminus, so rail
+        // boards also offer the directions trains are leaving in.
+        const headings = ["Northbound", "Southbound", "Eastbound", "Westbound"];
+        const present = headings.filter(
+          (heading) =>
+            heading === this._direction ||
+            arrivals.some(
+              (a) =>
+                a.direction === heading &&
+                (this._line === "all" || routeKey(a) === this._line),
+            ),
+        );
+        const directions = element("div", "chips directions");
+        directions.setAttribute("role", "group");
+        directions.setAttribute("aria-label", "Filter arrivals by direction");
+        // A chosen direction keeps its chip even while no such train is listed.
+        if (
+          attrs.service_type === "train" &&
+          (present.length > 1 || this._direction !== "all")
+        )
+          for (const key of ["all", ...present]) {
+            const chip = element(
+              "button",
+              "chip",
+              key === "all" ? "Any direction" : key,
+            );
+            chip.type = "button";
+            chip.setAttribute("aria-pressed", String(this._direction === key));
+            chip.addEventListener("click", () => {
+              this._direction = key;
+              this._render();
+            });
+            directions.append(chip);
+          }
         const select = element("select", "destination-filter");
         select.setAttribute("aria-label", "Filter arrivals by destination");
         const destinations = new Map(
           arrivals
-            .filter((a) => this._line === "all" || routeKey(a) === this._line)
+            .filter(
+              (a) =>
+                (this._line === "all" || routeKey(a) === this._line) &&
+                (this._direction === "all" || a.direction === this._direction),
+            )
             .map((a) => [
               destinationKey(a),
               a.destination || "Unknown destination",
@@ -1112,15 +1167,12 @@ const validAppearance = (value) =>
             select.selectedOptions[0]?.textContent;
           this._render();
         });
-        filters.append(chips, select);
+        filters.append(chips);
+        if (directions.childElementCount) filters.append(directions);
+        filters.append(select);
         card.append(filters);
       }
-      const filtered = arrivals.filter(
-        (a) =>
-          (this._line === "all" || routeKey(a) === this._line) &&
-          (this._destination === "all" ||
-            destinationKey(a) === this._destination),
-      );
+      const filtered = arrivals.filter((a) => this._passesFilters(a));
       const shown = filtered.slice(0, this._config.max_rows);
       const journey = attrs.journey_route?.legs?.length > 0;
       const chosenOrigin = journey ? this._connectionPlan().origin : null;
@@ -1296,6 +1348,7 @@ const validAppearance = (value) =>
   class WmataStationCardEditor extends HTMLElement {
     setConfig(config) {
       this._config = {
+        appearance: WMATA_DEFAULT_APPEARANCE,
         max_rows: 8,
         show_filters: true,
         show_updated: true,
@@ -1326,7 +1379,7 @@ const validAppearance = (value) =>
             name: "appearance",
             selector: {
               select: {
-                options: WMATA_APPEARANCES,
+                options: appearanceChoices(this._config.appearance),
                 mode: "dropdown",
               },
             },
@@ -1349,7 +1402,7 @@ const validAppearance = (value) =>
             transfer_buffer: "Minutes to change platforms",
             title: "Title (optional)",
             max_rows: "Maximum arrivals",
-            show_filters: "Show line and destination filters",
+            show_filters: "Show line, direction and destination filters",
             show_updated: "Show update time",
           })[name] || name;
         this._form.addEventListener("value-changed", (event) => {
@@ -1408,6 +1461,20 @@ const validAppearance = (value) =>
             ]
           : []),
       ];
+      // The base fields are built once; the appearance list depends on the card.
+      this._form.schema = this._form.schema.map((field) =>
+        field.name === "appearance"
+          ? {
+              ...field,
+              selector: {
+                select: {
+                  options: appearanceChoices(this._config.appearance),
+                  mode: "dropdown",
+                },
+              },
+            }
+          : field,
+      );
       this._form.hass = this._hass;
       this._form.data = this._config;
     }
@@ -1452,6 +1519,18 @@ const validAppearance = (value) =>
       for (const key of ["origin", "destination", "title"])
         if (config[key] !== undefined && typeof config[key] !== "string")
           throw new Error(`${key} must be a station name or text.`);
+      if (
+        config.reverse_after !== undefined &&
+        config.reverse_after !== null &&
+        config.reverse_after !== "" &&
+        WmataTripPlanner.minutesOfDay(config.reverse_after) === null
+      )
+        throw new Error('reverse_after must be a time such as "12:00".');
+      if (
+        config.show_form !== undefined &&
+        typeof config.show_form !== "boolean"
+      )
+        throw new Error("show_form must be true or false");
       if (this._config?.entity !== config.entity) {
         this._stations = null;
         this._catalogPending = false;
@@ -1465,8 +1544,34 @@ const validAppearance = (value) =>
       this.dataset.day = String(
         this._hass?.states?.["sun.sun"]?.state === "above_horizon",
       );
+      // A commute starts in the direction that suits the time of day.
+      this._autoReversed = this._reverseDue();
+      this._reversed = this._autoReversed;
       this._build();
       this._loadStations();
+    }
+    static minutesOfDay(value) {
+      // YAML 1.1 reads an unquoted 12:00 as the number 720.
+      if (Number.isInteger(value))
+        return value >= 0 && value < 1440 ? value : null;
+      const match =
+        typeof value === "string" &&
+        value.trim().match(/^([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/);
+      return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+    }
+    _commute() {
+      return Boolean(
+        this._config?.origin?.trim() && this._config?.destination?.trim(),
+      );
+    }
+    _now() {
+      return new Date();
+    }
+    _reverseDue() {
+      const after = WmataTripPlanner.minutesOfDay(this._config?.reverse_after);
+      if (!this._commute() || after === null) return false;
+      const now = this._now();
+      return now.getHours() * 60 + now.getMinutes() >= after;
     }
     set hass(hass) {
       const previous = this._hass;
@@ -1485,7 +1590,52 @@ const validAppearance = (value) =>
     }
     connectedCallback() {
       this._loadStations();
-      if (!this._timer) this._timer = setInterval(() => this._refresh(), 30000);
+      this._autoPlan();
+      if (!this._timer) this._timer = setInterval(() => this._tick(), 30000);
+    }
+    _tick() {
+      // A dashboard left open all day flips to the return trip on its own.
+      const due = this._reverseDue();
+      if (this._commute() && due !== this._autoReversed) {
+        this._autoReversed = due;
+        this._setDirection(due);
+        return;
+      }
+      this._refresh();
+    }
+    _autoPlan() {
+      if (!this.isConnected || !this._stations || !this._hass?.callWS) return;
+      if (this._commute() && !this._query) this._plan();
+      else if (this._query && !this._result) this._refresh();
+    }
+    _setDirection(reversed) {
+      this._reversed = reversed;
+      this._originInput.value = reversed
+        ? this._config.destination
+        : this._config.origin;
+      this._destinationInput.value = reversed
+        ? this._config.origin
+        : this._config.destination;
+      this._invalidate();
+      this._plan();
+    }
+    _swap() {
+      this._reversed = !this._reversed;
+      [this._originInput.value, this._destinationInput.value] = [
+        this._destinationInput.value,
+        this._originInput.value,
+      ];
+      this._invalidate();
+      this._plan();
+    }
+    _showSearch(visible) {
+      this._search.hidden = !visible;
+      this._editButton?.setAttribute("aria-expanded", String(visible));
+    }
+    _updateCommuteBar() {
+      if (!this._commuteRoute) return;
+      this._commuteRoute.textContent = `${this._originInput.value} → ${this._destinationInput.value}`;
+      this._reverseButton.setAttribute("aria-pressed", String(this._reversed));
     }
     disconnectedCallback() {
       clearInterval(this._timer);
@@ -1505,17 +1655,29 @@ const validAppearance = (value) =>
       return document.createElement("wmata-trip-planner-editor");
     }
     static getStubConfig(hass) {
-      const entity = Object.keys(hass?.states || {}).find((id) => {
-        const a = hass.states[id].attributes;
-        return (
-          (a.board_type === "station" && a.service_type === "train") ||
-          (Array.isArray(a.trains) && Array.isArray(a.paths))
-        );
-      });
+      const ids = Object.keys(hass?.states || {});
+      // A commute entry already knows the two stations, so start from it.
+      const commute = ids.find(
+        (id) =>
+          hass.states[id].attributes.board_type === "commute" &&
+          hass.states[id].attributes.direction === "outbound",
+      );
+      const entity =
+        commute ||
+        ids.find((id) => {
+          const a = hass.states[id].attributes;
+          return (
+            (a.board_type === "station" && a.service_type === "train") ||
+            (Array.isArray(a.trains) && Array.isArray(a.paths))
+          );
+        });
+      const trip = commute ? hass.states[commute].attributes : null;
       return {
         type: "custom:wmata-trip-planner",
         entity: entity || "",
-        appearance: "native",
+        ...(trip
+          ? { origin: trip.origin_name, destination: trip.destination_name }
+          : {}),
       };
     }
     _build() {
@@ -1524,6 +1686,7 @@ const validAppearance = (value) =>
         ha-card{display:block;border:var(--ha-card-border-width,1px) solid var(--divider-color,#ddd);border-radius:var(--ha-card-border-radius,24px);background:var(--ha-card-background,var(--card-background-color,#fff));box-shadow:var(--ha-card-box-shadow,none)}
         .comparison-summary{font-size:14px;line-height:1.6;margin:12px 0 6px}.comparison-note{font-size:12px;line-height:1.5;color:var(--secondary-text-color)}.route-comparison{margin-top:12px}.route-comparison summary{cursor:pointer;font-size:13px;padding:8px 0}.route-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}.route-choice{text-align:left;display:flex;flex-direction:column;gap:6px}.route-choice strong{font-size:12px}.route-choice span,.route-choice small{font-size:11px;line-height:1.5}.route-choice[aria-pressed=true]{border-color:var(--primary-color,#0076be);background:color-mix(in srgb,var(--primary-color,#0076be) 10%,transparent)}
         .planner-form{padding:16px}.planner-title{font-size:20px;font-weight:400;margin:0 0 12px}.fields{display:flex;gap:12px;flex-wrap:wrap}label{flex:1;min-width:150px;font-size:12px;line-height:1.8;color:var(--secondary-text-color,#64717b)}input{box-sizing:border-box;width:100%;font:inherit;font-size:14px;padding:11px 10px;border:1px solid var(--divider-color,#ccc);border-radius:8px;background:var(--secondary-background-color,#f4f6f7);color:var(--primary-text-color,#222)}
+        .commute-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.commute-route{flex:1;min-width:160px;font-size:15px;line-height:1.5}.reverse[aria-pressed=true]{border-color:var(--primary-color,#0076be)}.search[hidden]{display:none}.commute-bar+.search{margin-top:12px}
         .actions{display:flex;gap:8px;margin-top:12px}button{font:inherit;font-size:13px;border:1px solid var(--divider-color,#ccc);border-radius:9px;padding:9px 14px;background:transparent;color:inherit;cursor:pointer}button[type=submit]{background:var(--primary-color,#0076be);color:var(--text-primary-color,#fff);border-color:transparent}button:focus-visible,input:focus-visible{outline:2px solid var(--primary-color,#0076be);outline-offset:2px}.status,.scheduled{font-size:12px;line-height:1.6;margin-top:12px;color:var(--secondary-text-color,#64717b)}.result{margin-top:12px}.result:empty{display:none}
       </style>`;
       const card = element("ha-card");
@@ -1532,9 +1695,26 @@ const validAppearance = (value) =>
         element(
           "h2",
           "planner-title",
-          this._config.title || "Metro trip planner",
+          this._config.title ||
+            (this._commute() ? "My commute" : "Metro trip planner"),
         ),
       );
+      const commute = this._commute();
+      this._commuteRoute = this._reverseButton = this._editButton = null;
+      if (commute) {
+        // The saved trip, with one button for the way back.
+        const bar = element("div", "commute-bar");
+        this._commuteRoute = element("span", "commute-route");
+        this._reverseButton = element("button", "reverse", "Reverse trip");
+        this._reverseButton.type = "button";
+        this._reverseButton.onclick = () => this._swap();
+        this._editButton = element("button", "edit", "Change stations");
+        this._editButton.type = "button";
+        this._editButton.onclick = () => this._showSearch(this._search.hidden);
+        bar.append(this._commuteRoute, this._reverseButton, this._editButton);
+        form.append(bar);
+      }
+      this._search = element("div", "search");
       const fields = element("div", "fields");
       for (const [key, label] of [
         ["origin", "From"],
@@ -1547,7 +1727,14 @@ const validAppearance = (value) =>
         input.setAttribute("list", this._listId);
         input.placeholder = "Search Metro stations";
         input.autocomplete = "off";
-        input.value = this._config[key] || "";
+        input.value =
+          this._config[
+            commute && this._reversed
+              ? key === "origin"
+                ? "destination"
+                : "origin"
+              : key
+          ] || "";
         input.addEventListener("input", () => this._invalidate());
         this["_" + key + "Input"] = input;
         wrapper.append(input);
@@ -1560,24 +1747,17 @@ const validAppearance = (value) =>
       submit.type = "submit";
       const swap = element("button", null, "Swap stations");
       swap.type = "button";
-      swap.onclick = () => {
-        [this._originInput.value, this._destinationInput.value] = [
-          this._destinationInput.value,
-          this._originInput.value,
-        ];
-        this._invalidate();
-        this._plan();
-      };
+      swap.onclick = () => this._swap();
       actions.append(submit, swap);
+      this._search.append(fields, actions);
       this._status = element("div", "status", "Loading station names…");
       this._status.setAttribute("role", "status");
       this._scheduled = element("div", "scheduled");
       this._routeOptions = element("section", "route-options");
       this._routeOptions.setAttribute("aria-label", "Route comparison");
       form.append(
-        fields,
+        this._search,
         this._list,
-        actions,
         this._status,
         this._scheduled,
         this._routeOptions,
@@ -1591,6 +1771,8 @@ const validAppearance = (value) =>
       this._board = null;
       this._result = null;
       this.shadowRoot.append(card, this._resultHost);
+      this._showSearch(!commute || this._config.show_form === true);
+      this._updateCommuteBar();
       if (this._stations) this._fillStations();
     }
     _invalidate() {
@@ -1647,6 +1829,7 @@ const validAppearance = (value) =>
       }
       this._status.textContent =
         "Choose stations, then compare estimated arrivals using live trains and transfer waits.";
+      this._autoPlan();
     }
     _resolve(text) {
       const normalize = (value) =>
@@ -1673,10 +1856,13 @@ const validAppearance = (value) =>
       if (!from || !to || from.code === to.code) {
         this._status.textContent =
           "Choose two different stations from the suggestions. Use a full station name if several match.";
+        // A saved station name that doesn't match needs fixing where it's visible.
+        this._showSearch(true);
         return;
       }
       this._originInput.value = from.name;
       this._destinationInput.value = to.name;
+      this._updateCommuteBar();
       this._query = { origin: from.code, destination: to.code };
       await this._refresh();
     }
@@ -1913,13 +2099,22 @@ const validAppearance = (value) =>
         this._form = document.createElement("ha-form");
         this._form.computeLabel = ({ name }) =>
           ({
-            entity: "WMATA rail board or train map (API access)",
+            entity: "WMATA station, commute or train map (for API access)",
             appearance: "Appearance",
-            origin: "Starting station (optional)",
-            destination: "Destination station (optional)",
+            origin: "From station (optional)",
+            destination: "To station (optional)",
+            reverse_after: "Show the return trip from this time (optional)",
+            show_form: "Always show the station search",
             transfer_buffer: "Minutes to change platforms",
             title: "Title",
           })[name] || name;
+        this._form.computeHelper = ({ name }) =>
+          ({
+            origin:
+              "Set both stations to make this a commute card that plans on its own.",
+            reverse_after:
+              "For example 12:00, so afternoons show the trip home.",
+          })[name];
         this._form.addEventListener("value-changed", (event) => {
           event.stopPropagation();
           this._config = { ...this._config, ...event.detail.value };
@@ -1931,6 +2126,7 @@ const validAppearance = (value) =>
         .filter(
           ([id, s]) =>
             id === this._config.entity ||
+            s.attributes.board_type === "commute" ||
             (s.attributes.board_type === "station" &&
               s.attributes.service_type === "train") ||
             (Array.isArray(s.attributes.trains) &&
@@ -1950,11 +2146,22 @@ const validAppearance = (value) =>
         {
           name: "appearance",
           selector: {
-            select: { options: WMATA_APPEARANCES, mode: "dropdown" },
+            select: {
+              options: appearanceChoices(
+                (this._config || this.config).appearance,
+              ),
+              mode: "dropdown",
+            },
           },
         },
         { name: "origin", selector: { text: {} } },
         { name: "destination", selector: { text: {} } },
+        ...(this._config.origin?.trim() && this._config.destination?.trim()
+          ? [
+              { name: "reverse_after", selector: { time: {} } },
+              { name: "show_form", selector: { boolean: {} } },
+            ]
+          : []),
         {
           name: "transfer_buffer",
           selector: { number: { min: 1, max: 30, mode: "box" } },
@@ -1969,13 +2176,14 @@ const validAppearance = (value) =>
     customElements.define("wmata-trip-planner", WmataTripPlanner);
   if (!customElements.get("wmata-trip-planner-editor"))
     customElements.define("wmata-trip-planner-editor", WmataTripPlannerEditor);
-  window.customCards.push({
-    type: "wmata-trip-planner",
-    name: "WMATA Trip Planner",
-    description:
-      "Search any two Metro stations for ride times, live trains and estimated connections.",
-    preview: true,
-  });
+  if (!window.customCards.some((c) => c.type === "wmata-trip-planner"))
+    window.customCards.push({
+      type: "wmata-trip-planner",
+      name: "WMATA Trip Planner",
+      description:
+        "Plan a trip between any two Metro stations, or pin your commute and flip it for the way home.",
+      preview: true,
+    });
 })();
 
 if (!customElements.get("wmata-train-map")) {
@@ -2004,7 +2212,7 @@ if (!customElements.get("wmata-train-map")) {
         zoom: 1,
         view: "geographic",
         theme_mode: "auto",
-        appearance: "standard",
+        appearance: WMATA_DEFAULT_APPEARANCE,
         ...c,
       };
       if (!validAppearance(this.config.appearance))
@@ -2681,8 +2889,8 @@ if (!customElements.get("wmata-train-map")) {
   customElements.define("wmata-train-map", WmataTrainMap);
   window.customCards.push({
     type: "wmata-train-map",
-    name: "WMATA train map",
-    description: "Live network train positions",
+    name: "WMATA Train Map",
+    description: "Live train positions across the Metrorail network.",
   });
 }
 
@@ -2694,7 +2902,7 @@ if (!customElements.get("wmata-map-editor")) {
         zoom: 1,
         view: "geographic",
         theme_mode: "auto",
-        appearance: "standard",
+        appearance: WMATA_DEFAULT_APPEARANCE,
         ...c,
       };
       if (!validAppearance(this.config.appearance))
@@ -2783,7 +2991,12 @@ if (!customElements.get("wmata-map-editor")) {
         {
           name: "appearance",
           selector: {
-            select: { options: WMATA_APPEARANCES, mode: "dropdown" },
+            select: {
+              options: appearanceChoices(
+                (this._config || this.config).appearance,
+              ),
+              mode: "dropdown",
+            },
           },
         },
         {

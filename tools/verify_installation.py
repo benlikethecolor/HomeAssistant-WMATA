@@ -135,8 +135,31 @@ async def verify(scenario):
                             else {"api_key": "fixture-key", "service_type": service}
                         ),
                     )
-                    if service != "map":
-                        assert flow["step_id"] == "location"
+                    if service == "bus":
+                        # Leave the ID empty and search around a pin instead.
+                        assert flow["step_id"] == "bus_stop"
+                        flow = await hass.config_entries.flow.async_configure(
+                            flow["flow_id"],
+                            {"near": {"latitude": 38.9, "longitude": -77.03}},
+                        )
+                        assert flow["step_id"] == "nearby_stop", flow
+                        choices = [
+                            option["value"]
+                            for option in flow["data_schema"]
+                            .schema["id"]
+                            .config["options"]
+                        ]
+                        assert choices == [location, "1001195", "search_again"]
+                    if service == "commute":
+                        assert flow["step_id"] == "commute"
+                        home, work = location
+                        flow = await hass.config_entries.flow.async_configure(
+                            flow["flow_id"], {"home": home, "work": work}
+                        )
+                    elif service != "map":
+                        assert flow["step_id"] == (
+                            "location" if service == "train" else "nearby_stop"
+                        )
                         flow = await hass.config_entries.flow.async_configure(
                             flow["flow_id"], {"id": location}
                         )
@@ -149,6 +172,35 @@ async def verify(scenario):
                     rail = await add("train", "A01")
                     await add("bus", "1001051")
                     network = await add("map")
+                    commute = await add("commute", ("A01", "B03"))
+                    assert commute.title == "Metro Center \u2194 Union Station"
+                    # Red toward Glenmont in 4 minutes, then three 2 minute hops.
+                    travel = hass.states.get(
+                        "sensor.wmata_commute_to_union_station_travel_time"
+                    )
+                    assert travel.state == "10", travel
+                    assert travel.attributes["board_type"] == "commute"
+                    assert travel.attributes["transfers"] == 0
+                    assert (
+                        hass.states.get(
+                            "sensor.wmata_commute_to_union_station_next_train"
+                        ).state
+                        == "4"
+                    )
+                    # Nothing in the fixture leaves Union Station, so no guess is made.
+                    assert (
+                        hass.states.get(
+                            "sensor.wmata_commute_to_metro_center_travel_time"
+                        ).state
+                        == "unknown"
+                    )
+                    assert not [
+                        e
+                        for e in entity_registry.async_entries_for_config_entry(
+                            entity_registry.async_get(hass), commute.entry_id
+                        )
+                        if e.domain == "binary_sensor"
+                    ]
                     options = await hass.config_entries.options.async_init(
                         rail.entry_id
                     )

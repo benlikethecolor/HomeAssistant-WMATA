@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 
 from custom_components.wmata import (
     _async_update_listener,
@@ -27,6 +28,8 @@ from custom_components.wmata.api import (
 from custom_components.wmata.config_flow import (
     WmataConfigFlow,
     WmataOptionsFlow,
+    search_start,
+    stop_label,
     validate_location,
 )
 from custom_components.wmata.const import CARD_VERSION, station_codes
@@ -132,9 +135,8 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
         )
         return c
 
-    async def test_train_metadata_filter_and_empty_results(self):
-        e = entry(lines=["RD"])
-        c = self.coordinator(e)
+    async def test_train_board_keeps_every_line_and_loads_metadata_once(self):
+        c = self.coordinator()
         c.api.trains.return_value = [
             {"Min": "3", "Line": "BL"},
             {"Min": "7", "Line": "RD"},
@@ -148,9 +150,8 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
         c.api.stations.assert_awaited_once()
         c.api.trains.assert_awaited_with(c.codes)
 
-    async def test_bus_routes(self):
-        e = entry("bus", "1001195", routes=["D10"])
-        c = self.coordinator(e)
+    async def test_bus_board_keeps_every_route_and_uses_the_stop_name(self):
+        c = self.coordinator(entry("bus", "1001195"))
         c.api.buses.return_value = [
             {"Minutes": 5, "RouteID": "D10"},
             {"Minutes": 1, "RouteID": "C10"},
@@ -299,6 +300,14 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("lines", update["data"])
         self.assertEqual(update["options"], {"scan_interval": 60, "journeys": []})
 
+    async def test_newer_entry_versions_are_not_downgraded(self):
+        hass = SimpleNamespace(
+            config_entries=SimpleNamespace(async_update_entry=MagicMock())
+        )
+        self.assertFalse(await async_migrate_entry(hass, entry(version=3)))
+        self.assertTrue(await async_migrate_entry(hass, entry(version=2)))
+        hass.config_entries.async_update_entry.assert_not_called()
+
     async def test_bundled_card_served_and_registered(self):
         hass = SimpleNamespace(
             http=SimpleNamespace(async_register_static_paths=AsyncMock())
@@ -415,6 +424,165 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
         ):
             result = await flow.async_step_location({"id": "C01"})
         self.assertEqual(result["reason"], "already_configured")
+
+    async def test_bus_stop_is_named_after_the_stop_and_only_added_once(self):
+        flow = WmataConfigFlow()
+        flow.hass = self.hass
+        flow.context = {"source": "user"}
+        flow._async_current_entries = MagicMock(return_value=[])
+        flow._setup_data = {"api_key": "test", "service_type": "bus"}
+        form = await flow.async_step_bus_stop()
+        self.assertEqual(form["step_id"], "bus_stop")
+        self.assertIn("buseta", form["description_placeholders"]["bus_stop_url"])
+        api = SimpleNamespace(
+            stop_name=AsyncMock(return_value="16th St NW + U St NW"),
+            buses=AsyncMock(return_value=[]),
+        )
+        with (
+            patch("custom_components.wmata.config_flow.WmataApi", return_value=api),
+            patch("custom_components.wmata.config_flow.async_get_clientsession"),
+            patch.object(flow, "async_set_unique_id", AsyncMock()) as unique,
+            patch.object(flow, "_abort_if_unique_id_configured"),
+        ):
+            result = await flow.async_step_bus_stop({"id": " 1001195 "})
+            unique.assert_awaited_once_with("bus:1001195")
+            self.assertEqual(result["title"], "16th St NW + U St NW")
+            self.assertEqual(result["data"]["id"], "1001195")
+            api.buses.assert_awaited_once_with("1001195")
+            # A rail station with the same digits would be a different service.
+            flow._async_current_entries.return_value = [
+                entry("train", "1001195"),
+                entry("bus", "1001195"),
+            ]
+            again = await flow.async_step_bus_stop({"id": "1001195"})
+        self.assertEqual(again["reason"], "already_configured")
+
+    async def test_bus_stop_search_lists_the_closest_new_stops_first(self):
+        flow = WmataConfigFlow()
+        flow.hass = self.hass
+        flow.context = {"source": "user"}
+        flow._async_current_entries = MagicMock(
+            return_value=[entry("bus", "1000003"), entry("train", "A01")]
+        )
+        flow._setup_data = {"api_key": "test", "service_type": "bus"}
+        pin = {"latitude": 38.9000, "longitude": -77.0300}
+
+        def stop(stop_id, name, latitude, routes=()):
+            return {
+                "StopID": stop_id,
+                "Name": name,
+                "Lat": latitude,
+                "Lon": -77.03,
+                "Routes": list(routes),
+            }
+
+        api = SimpleNamespace(
+            nearby_stops=AsyncMock(
+                return_value=[
+                    stop("1000002", "Farther", 38.9040, ["D34", "D34v1", "C10*2"]),
+                    stop("1000001", "Nearest", 38.9005),
+                    stop("1000003", "Already added", 38.9001),
+                    *[
+                        stop(f"20000{i:02}", f"Stop {i}", 38.905 + i / 10000)
+                        for i in range(20)
+                    ],
+                ]
+            ),
+            stop_name=AsyncMock(return_value="Nearest"),
+            buses=AsyncMock(return_value=[]),
+        )
+        with (
+            patch("custom_components.wmata.config_flow.WmataApi", return_value=api),
+            patch("custom_components.wmata.config_flow.async_get_clientsession"),
+            patch.object(flow, "async_set_unique_id", AsyncMock()),
+            patch.object(flow, "_abort_if_unique_id_configured"),
+        ):
+            form = await flow.async_step_bus_stop({"near": pin})
+            self.assertEqual(form["step_id"], "nearby_stop")
+            api.nearby_stops.assert_awaited_once_with(38.9, -77.03, 800)
+            options = form["data_schema"].schema["id"].config["options"]
+            self.assertEqual([o["value"] for o in options[:2]], ["1000001", "1000002"])
+            self.assertEqual(len(options), 16)
+            self.assertEqual(options[-1]["value"], "search_again")
+            self.assertEqual(form["description_placeholders"]["count"], "15")
+            self.assertNotIn("1000003", [o["value"] for o in options])
+            self.assertEqual(options[0]["label"], "Nearest · 60 m · #1000001")
+            self.assertEqual(
+                options[1]["label"], "Farther · D34, C10 · 440 m · #1000002"
+            )
+            again = await flow.async_step_nearby_stop({"id": "search_again"})
+            self.assertEqual(again["step_id"], "bus_stop")
+            result = await flow.async_step_nearby_stop({"id": "1000001"})
+            self.assertEqual(result["title"], "Nearest")
+            self.assertEqual(result["data"]["id"], "1000001")
+
+    async def test_bus_stop_search_reports_empty_areas_and_outages(self):
+        flow = WmataConfigFlow()
+        flow.hass = self.hass
+        flow._async_current_entries = MagicMock(return_value=[])
+        flow._setup_data = {"api_key": "test", "service_type": "bus"}
+        pin = {"latitude": 39.5, "longitude": -76.5}
+        api = SimpleNamespace(nearby_stops=AsyncMock(return_value=[]))
+        with (
+            patch("custom_components.wmata.config_flow.WmataApi", return_value=api),
+            patch("custom_components.wmata.config_flow.async_get_clientsession"),
+        ):
+            form = await flow.async_step_bus_stop({"near": pin})
+            self.assertEqual(form["step_id"], "bus_stop")
+            self.assertEqual(form["errors"], {"near": "no_stops_nearby"})
+            # The pin stays where the user put it.
+            near = next(k for k in form["data_schema"].schema if str(k) == "near")
+            self.assertEqual(near.default(), pin)
+            for error, code in (
+                (APIConnectionError("Offline"), "cannot_connect"),
+                (APIAuthError(), "invalid_auth"),
+            ):
+                api.nearby_stops.side_effect = error
+                form = await flow.async_step_bus_stop({"near": pin})
+                self.assertEqual(form["errors"], {"base": code})
+
+    async def test_search_starts_at_home_only_inside_the_service_area(self):
+        self.hass.config.latitude, self.hass.config.longitude = 38.93, -77.07
+        self.assertEqual(
+            search_start(self.hass), {"latitude": 38.93, "longitude": -77.07}
+        )
+        self.hass.config.latitude, self.hass.config.longitude = 52.37, 4.89
+        self.assertEqual(
+            search_start(self.hass), {"latitude": 38.8983, "longitude": -77.0281}
+        )
+        self.hass.config.units = US_CUSTOMARY_SYSTEM
+        stop = {"StopID": "1000001", "Name": "Stop", "Routes": None}
+        self.assertEqual(stop_label(self.hass, stop, 100), "Stop · 350 ft · #1000001")
+        self.assertEqual(stop_label(self.hass, stop, 700), "Stop · 0.4 mi · #1000001")
+
+    async def test_reauth_asks_for_a_key_and_keeps_the_form_when_it_is_rejected(self):
+        flow = WmataConfigFlow()
+        flow.hass = self.hass
+        flow._async_current_entries = MagicMock(return_value=[])
+        e = entry()
+        with (
+            patch.object(flow, "_get_reauth_entry", return_value=e),
+            patch.object(
+                flow, "async_update_reload_and_abort", return_value={"type": "abort"}
+            ) as update,
+        ):
+            form = await flow.async_step_reauth(e.data)
+            self.assertEqual(form["step_id"], "reauth_confirm")
+            self.assertNotIn("test-key", str(form))
+            with patch(
+                "custom_components.wmata.config_flow.validate_location",
+                side_effect=APIAuthError(),
+            ):
+                form = await flow.async_step_reauth_confirm({"api_key": "wrong"})
+            self.assertEqual(form["errors"]["base"], "invalid_auth")
+            update.assert_not_called()
+            with patch(
+                "custom_components.wmata.config_flow.validate_location",
+                return_value=dict(e.data, api_key="new"),
+            ):
+                await flow.async_step_reauth_confirm({"api_key": "new"})
+        self.assertEqual(update.call_args.kwargs["reason"], "reauth_successful")
+        self.assertEqual(update.call_args.kwargs["data_updates"]["api_key"], "new")
 
     async def test_reconfigure_preserves_entry_and_reloads_once(self):
         flow = WmataConfigFlow()
@@ -583,6 +751,65 @@ class ApiTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(APIConnectionError):
             await two.get("test")
         two.session.get.assert_not_called()
+
+    async def test_rate_limit_pauses_every_request_for_a_bounded_retry_after(self):
+        loop = asyncio.get_running_loop()
+        for header, expected in (
+            ("120", 120),
+            ("9999", 300),
+            ("0", 1),
+            ("soon", 60),
+            (None, 60),
+        ):
+            with self.subTest(header=header):
+                response = MagicMock()
+                response.status = 429
+                response.headers = {} if header is None else {"Retry-After": header}
+                context = MagicMock()
+                context.__aenter__ = AsyncMock(return_value=response)
+                context.__aexit__ = AsyncMock(return_value=False)
+                session = MagicMock()
+                session.get.return_value = context
+                api = WmataApi(session, "private-key")
+                started = loop.time()
+                with self.assertRaises(APIConnectionError):
+                    await api.get("test")
+                self.assertAlmostEqual(
+                    api._state.blocked_until - started, expected, delta=2
+                )
+                # The cooldown is honoured locally instead of asking WMATA again.
+                with self.assertRaises(APIConnectionError):
+                    await api.get("test")
+                self.assertEqual(session.get.call_count, 1)
+
+    async def test_unknown_bus_stop_is_an_invalid_location(self):
+        api = WmataApi(MagicMock(), "private-key")
+        for payload in ({}, {"Stop": None}, {"Stop": {"Name": ""}}):
+            with (
+                self.subTest(payload=payload),
+                patch.object(api, "get", return_value=payload),
+            ):
+                with self.assertRaises(InvalidLocation):
+                    await api.stop_name("0000000")
+        with patch.object(api, "get", return_value={"Stop": {"Name": "K St + 16th"}}):
+            self.assertEqual(await api.stop_name("1001195"), "K St + 16th")
+
+    async def test_nearby_stops_rounds_the_pin_and_drops_unusable_rows(self):
+        api = WmataApi(MagicMock(), "private-key")
+        good = {"StopID": "1001195", "Name": "K St", "Lat": 38.9, "Lon": -77.03}
+        rows = [
+            good,
+            {**good, "StopID": "0"},
+            {**good, "StopID": None},
+            {**good, "Name": None},
+            {**good, "Lat": "38.9"},
+            {**good, "Lon": float("nan")},
+        ]
+        with patch.object(api, "get", return_value={"Stops": rows}) as request:
+            self.assertEqual(await api.nearby_stops(38.123456, -77.654321, 800), [good])
+        request.assert_awaited_once_with(
+            "Bus.svc/json/jStops", Lat="38.1235", Lon="-77.6543", Radius="800"
+        )
 
     async def test_malformed_lists(self):
         for data in ({}, {"Trains": None}, {"Trains": [None]}):

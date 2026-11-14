@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import math
+import re
 import zipfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -129,7 +130,7 @@ class WmataApi:
 
     async def validate_service(self, service: str) -> None:
         """Check access to every endpoint required for the selected service."""
-        if service == "train":
+        if service in ("train", "commute"):
             await self.stations()
         elif service == "bus":
             self._items(await self.get("Bus.svc/json/jRoutes"), "Routes")
@@ -249,6 +250,31 @@ class WmataApi:
             await self.get("NextBusService.svc/json/jPredictions", StopID=stop),
             "Predictions",
         )
+
+    async def nearby_stops(
+        self, latitude: float, longitude: float, radius: int
+    ) -> list[dict[str, Any]]:
+        """List bus stops within a radius in metres, dropping unusable rows."""
+        stops = self._items(
+            await self.get(
+                "Bus.svc/json/jStops",
+                Lat=f"{latitude:.4f}",
+                Lon=f"{longitude:.4f}",
+                Radius=str(radius),
+            ),
+            "Stops",
+        )
+        return [
+            stop
+            for stop in stops
+            if isinstance(stop.get("StopID"), str)
+            and re.fullmatch(r"\d{7}", stop["StopID"])
+            and isinstance(stop.get("Name"), str)
+            and all(
+                type(stop.get(key)) in (int, float) and math.isfinite(stop[key])
+                for key in ("Lat", "Lon")
+            )
+        ]
 
     async def stop_name(self, stop: str) -> str:
         data = await self.get("Bus.svc/json/jStopSchedule", StopID=stop)

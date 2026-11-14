@@ -1,6 +1,8 @@
 """One station board and optional saved journeys, without numbered slots."""
 
+import math
 from copy import deepcopy
+from datetime import UTC, datetime
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import UnitOfTime
@@ -10,7 +12,8 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import parse_datetime
 
-from .const import CONF_JOURNEYS, DOMAIN, LINE_NAME_MAP
+from .commute import DIRECTIONS
+from .const import CONF_JOURNEYS, DOMAIN, LINE_NAME_MAP, STATION_CODE_MAP
 from .coordinator import WmataCoordinator
 from .directions import station_directions
 from .journeys import describe_route
@@ -24,6 +27,13 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     coordinator = entry.runtime_data
     if entry.data["service_type"] == "map":
         async_add_entities([NetworkMapSensor(coordinator)])
+        return
+    if entry.data["service_type"] == "commute":
+        async_add_entities(
+            WmataCommuteSensor(coordinator, direction, kind)
+            for direction in DIRECTIONS
+            for kind in ("travel_time", "next_train", "arrival")
+        )
         return
     sensors = [WmataBoardSensor(coordinator)]
     sensors.extend(
@@ -191,6 +201,100 @@ class NetworkMapSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         return self.coordinator.data
+
+
+class WmataCommuteSensor(CoordinatorEntity, SensorEntity):
+    """Estimated trip between two stations, usable in automations."""
+
+    _attr_has_entity_name = True
+    _unrecorded_attributes = frozenset({"updated_at", "first_train"})
+
+    def __init__(self, coordinator, direction, kind) -> None:
+        super().__init__(coordinator)
+        self.direction = direction
+        self.kind = kind
+        self.origin, self.destination = coordinator.stations(direction)
+        self._attr_unique_id = (
+            f"wmata_commute_{coordinator.home.lower()}_{coordinator.work.lower()}"
+            f"_{direction}_{kind}"
+        )
+        self._attr_name = (
+            f"To {STATION_CODE_MAP[self.destination]} "
+            + {
+                "travel_time": "travel time",
+                "next_train": "next train",
+                "arrival": "arrival",
+            }[kind]
+        )
+        self._attr_icon = {
+            "travel_time": "mdi:timer-outline",
+            "next_train": "mdi:subway",
+            "arrival": "mdi:clock-check-outline",
+        }[kind]
+        if kind == "arrival":
+            self._attr_device_class = SensorDeviceClass.TIMESTAMP
+        else:
+            self._attr_device_class = SensorDeviceClass.DURATION
+            self._attr_native_unit_of_measurement = UnitOfTime.MINUTES
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"commute_{coordinator.home}_{coordinator.work}")},
+            name=f"WMATA {coordinator.commute_name}",
+            manufacturer="WMATA",
+            entry_type=DeviceEntryType.SERVICE,
+        )
+
+    @property
+    def trip(self) -> dict | None:
+        data = self.coordinator.data
+        return data["trips"].get(self.direction) if data else None
+
+    @property
+    def native_value(self):
+        trip = self.trip
+        if not trip:
+            return None
+        if self.kind == "next_train":
+            if trip["departure"] is None:
+                return None
+            return max(0, math.ceil((trip["departure"] - trip["calculated_at"]) / 60))
+        if trip["arrival"] is None:
+            return None
+        if self.kind == "arrival":
+            return datetime.fromtimestamp(trip["arrival"], UTC)
+        return max(0, math.ceil((trip["arrival"] - trip["calculated_at"]) / 60))
+
+    @property
+    def extra_state_attributes(self):
+        # The travel-time sensor describes the trip; the others are plain values.
+        if self.kind != "travel_time":
+            return None
+        trip = self.trip or {}
+        train = trip.get("first_train") or {}
+        return {
+            "board_type": "commute",
+            "direction": self.direction,
+            "origin": self.origin,
+            "origin_name": STATION_CODE_MAP[self.origin],
+            "destination": self.destination,
+            "destination_name": STATION_CODE_MAP[self.destination],
+            "route_description": trip.get("route_description"),
+            "transfers": trip.get("transfers"),
+            "first_train": (
+                {
+                    "line": train.get("line"),
+                    "line_name": train.get("line_name"),
+                    "destination": train.get("destination"),
+                }
+                if train
+                else None
+            ),
+            # True when part of the trip relies on the timetable, not live trains.
+            "schedule_estimate": trip.get("schedule_estimate"),
+            "transfer_buffer": self.coordinator.buffer,
+            "updated_at": self.coordinator.data["updated_at"]
+            if self.coordinator.data
+            else None,
+        }
 
 
 class WmataDetailSensor(WmataBoardSensor):

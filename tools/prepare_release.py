@@ -13,7 +13,7 @@ def prepare(tag: str, output: Path) -> dict[str, str]:
     manifest = json.loads((ROOT / "custom_components/wmata/manifest.json").read_text())
     version = manifest["version"]
     if not re.fullmatch(r"v\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.?\d+)?", tag):
-        raise ValueError("Use a version tag such as v4.6.3 or v4.7.0-beta.1")
+        raise ValueError("Use a version tag such as v3.0.0 or v3.1.0-beta.1")
     if tag != f"v{version}":
         raise ValueError("Release tag must match manifest.json version")
     constants = (ROOT / "custom_components/wmata/const.py").read_text()
@@ -24,14 +24,14 @@ def prepare(tag: str, output: Path) -> dict[str, str]:
     archive = build(output / f"wmata-{version}.zip")
     notes = output / "release-notes.md"
     body = f"Requires Home Assistant {minimum} or newer.\n\n"
-    if version.startswith("4."):
+    if version.startswith("3."):
         body += (
             "Upgrading from 2.x: numbered sensors are replaced by arrival boards. "
             "Update dashboard and automation entity references after upgrading.\n\n"
         )
     body += (
         "[Installation and upgrade instructions]"
-        "(https://github.com/benlikethecolor/HomeAssistant-WMATA#upgrading).\n"
+        "(https://github.com/benlikethecolor/HomeAssistant-WMATA#upgrading-from-2x).\n"
     )
     notes.write_text(body)
     return {

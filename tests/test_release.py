@@ -49,7 +49,7 @@ class ReleaseTest(unittest.TestCase):
             self.assertIn("numbered sensors", Path(metadata["notes"]).read_text())
 
     def test_bad_or_mismatched_tags_create_no_artifacts(self):
-        for tag in ("v0.0.0", "main", "v4.6.3;echo bad", "../v4.6.3"):
+        for tag in ("v0.0.0", "main", "v3.0.0;echo bad", "../v3.0.0"):
             with self.subTest(tag=tag), tempfile.TemporaryDirectory() as folder:
                 self.assertNotEqual(self.prepare(tag, folder).returncode, 0)
                 self.assertEqual(list(Path(folder).iterdir()), [])

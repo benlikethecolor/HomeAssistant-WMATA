@@ -7,10 +7,11 @@ from uuid import uuid4
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, OptionsFlow
-from homeassistant.const import CONF_API_KEY, CONF_ID
+from homeassistant.const import CONF_API_KEY, CONF_ID, UnitOfLength
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.util.location import distance
 
 from .api import APIAuthError, APIConnectionError, InvalidLocation, WmataApi
 from .const import (
@@ -20,8 +21,10 @@ from .const import (
     CONF_LINES,
     CONF_ROUTES,
     CONF_SERVICE_TYPE,
+    CONF_TRANSFER_BUFFER,
     DEFAULT_DUE_SOON,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_TRANSFER_BUFFER,
     DOMAIN,
     LINE_NAME_MAP,
     STATION_CODE_MAP,
@@ -36,6 +39,47 @@ KEY_SCHEMA = vol.Schema(
         )
     }
 )
+
+# Bus stop search: a pin on a map, then the closest stops to it.
+METRO_CENTER = (38.8983, -77.0281)
+SERVICE_AREA_METERS = 80000
+NEARBY_RADIUS_METERS = 800
+NEARBY_LIMIT = 15
+SEARCH_AGAIN = "search_again"
+
+
+def search_start(hass) -> dict[str, float]:
+    """Start at home, or downtown when home is nowhere near Metrobus service."""
+    latitude, longitude = hass.config.latitude, hass.config.longitude
+    away = distance(latitude, longitude, *METRO_CENTER)
+    if away is None or away > SERVICE_AREA_METERS:
+        latitude, longitude = METRO_CENTER
+    return {"latitude": latitude, "longitude": longitude}
+
+
+def stop_label(hass, stop: dict, meters: float) -> str:
+    """Name, routes, distance and the ID printed on the sign."""
+    routes = list(
+        dict.fromkeys(
+            # WMATA lists pattern variants such as 10Av1 or D34*2 separately.
+            re.split(r"[*/]|v\d", route)[0]
+            for route in stop.get("Routes") or []
+            if isinstance(route, str) and route
+        )
+    )
+    if hass.config.units.length_unit == UnitOfLength.MILES:
+        feet = meters * 3.28084
+        away = (
+            f"{round(feet / 50) * 50} ft"
+            if feet < 1000
+            else f"{meters / 1609.344:.1f} mi"
+        )
+    else:
+        away = f"{round(meters / 10) * 10} m"
+    served = ", ".join(routes[:6]) + (", …" if len(routes) > 6 else "")
+    return " · ".join(
+        part for part in (stop["Name"], served, away, f"#{stop['StopID']}") if part
+    )
 
 
 def line_selector():
@@ -59,6 +103,9 @@ async def validate_location(hass, data):
     if data[CONF_SERVICE_TYPE] == "map":
         await api.validate_service("map")
         return {**data, "location_name": "Metrorail train map"}
+    if data[CONF_SERVICE_TYPE] == "commute":
+        await api.validate_service("commute")
+        return data
     if data[CONF_SERVICE_TYPE] == "train":
         stations = await api.stations()
         station = next((s for s in stations if s.get("Code") == data[CONF_ID]), None)
@@ -154,6 +201,10 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
                         data={**user_input, CONF_ID: "network"},
                     )
                 self._setup_data = dict(user_input)
+                if user_input[CONF_SERVICE_TYPE] == "bus":
+                    return await self.async_step_bus_stop()
+                if user_input[CONF_SERVICE_TYPE] == "commute":
+                    return await self.async_step_commute()
                 return await self.async_step_location()
         key_fields = KEY_SCHEMA.schema
         if saved and not (user_input and CONF_API_KEY in user_input and errors):
@@ -165,7 +216,7 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
                         options=[
                             *[
                                 selector.SelectOptionDict(
-                                    value=entry_id, label=f"Saved key — {entry.title}"
+                                    value=entry_id, label=f"Same key as {entry.title}"
                                 )
                                 for entry_id, entry in saved.items()
                             ],
@@ -190,6 +241,9 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
                             selector.SelectOptionDict(value="train", label="Metrorail"),
                             selector.SelectOptionDict(value="bus", label="Metrobus"),
                             selector.SelectOptionDict(
+                                value="commute", label="Commute between two stations"
+                            ),
+                            selector.SelectOptionDict(
                                 value="map", label="Systemwide train map"
                             ),
                         ]
@@ -204,62 +258,223 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={"api_key_url": "https://developer.wmata.com/"},
         )
 
+    async def _add_location(self, location):
+        """Create the entry for a station or stop, or say why it can't be added."""
+        errors = {}
+        try:
+            data = await validate_location(
+                self.hass, {**self._setup_data, CONF_ID: location}
+            )
+        except APIAuthError:
+            errors["base"] = "invalid_auth"
+        except APIConnectionError:
+            errors["base"] = "cannot_connect"
+        except InvalidLocation:
+            errors[CONF_ID] = "invalid_location"
+        else:
+            for entry in self._async_current_entries():
+                if entry.data.get(CONF_SERVICE_TYPE) != data[CONF_SERVICE_TYPE]:
+                    continue
+                old_id = entry.data.get(CONF_ID, "").strip().upper()
+                if old_id == data[CONF_ID] or (
+                    data[CONF_SERVICE_TYPE] == "train"
+                    and old_id in data["station_codes"]
+                ):
+                    return self.async_abort(reason="already_configured"), errors
+            codes = data.get("station_codes", [data[CONF_ID]])
+            await self.async_set_unique_id(
+                f"{data[CONF_SERVICE_TYPE]}:{','.join(codes)}"
+            )
+            self._abort_if_unique_id_configured()
+            return (
+                self.async_create_entry(title=data["location_name"], data=data),
+                errors,
+            )
+        return None, errors
+
     async def async_step_location(self, user_input=None):
+        """Pick a rail station by name."""
         errors = {}
         if user_input is not None:
-            try:
-                data = await validate_location(
-                    self.hass, {**self._setup_data, **user_input}
+            result, errors = await self._add_location(user_input[CONF_ID])
+            if result:
+                return result
+        # Show each physical station once by name.
+        choices = {}
+        for code, name in STATION_CODE_MAP.items():
+            choices.setdefault(name, code)
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_ID): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value=code, label=name)
+                            for name, code in sorted(choices.items())
+                        ],
+                        custom_value=False,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
                 )
-            except APIAuthError:
-                errors["base"] = "invalid_auth"
-            except APIConnectionError:
-                errors["base"] = "cannot_connect"
-            except InvalidLocation:
-                errors[CONF_ID] = "invalid_location"
-            else:
-                for entry in self._async_current_entries():
-                    if entry.data.get(CONF_SERVICE_TYPE) != data[CONF_SERVICE_TYPE]:
-                        continue
-                    old_id = entry.data.get(CONF_ID, "").strip().upper()
-                    if old_id == data[CONF_ID] or (
-                        data[CONF_SERVICE_TYPE] == "train"
-                        and old_id in data["station_codes"]
-                    ):
-                        return self.async_abort(reason="already_configured")
-                codes = data.get("station_codes", [data[CONF_ID]])
-                await self.async_set_unique_id(
-                    f"{data[CONF_SERVICE_TYPE]}:{','.join(codes)}"
-                )
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=data["location_name"], data=data)
-        if self._setup_data[CONF_SERVICE_TYPE] == "train":
-            # Show each physical station once by name.
-            choices = {}
-            for code, name in STATION_CODE_MAP.items():
-                choices.setdefault(name, code)
-            location_selector = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(
-                            value=code,
-                            label=name,
-                        )
-                        for name, code in sorted(choices.items())
-                    ],
-                    custom_value=False,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
-            )
-            schema = vol.Schema(
-                {
-                    vol.Required(CONF_ID): location_selector,
-                }
-            )
-        else:
-            schema = vol.Schema({vol.Required(CONF_ID): str})
+            }
+        )
         return self.async_show_form(
             step_id="location", data_schema=schema, errors=errors
+        )
+
+    async def async_step_commute(self, user_input=None):
+        """Two stations become travel-time sensors for the trip each way."""
+        errors = {}
+        if user_input is not None:
+            home, work = user_input["home"], user_input["work"]
+            if STATION_CODE_MAP[home] == STATION_CODE_MAP[work]:
+                errors["work"] = "same_station"
+            elif plan_journey(home, work) is None:
+                errors["work"] = "no_route"
+            else:
+                # Either platform code of a transfer station means the same place.
+                first, second = min(station_codes(home)), min(station_codes(work))
+                await self.async_set_unique_id(f"commute:{first}:{second}")
+                self._abort_if_unique_id_configured()
+                name = (user_input.get("name") or "").strip() or "Commute"
+                return self.async_create_entry(
+                    title=f"{STATION_CODE_MAP[home]} ↔ {STATION_CODE_MAP[work]}",
+                    data={
+                        **self._setup_data,
+                        CONF_ID: f"{first}-{second}",
+                        "home": first,
+                        "work": second,
+                        "location_name": name,
+                    },
+                )
+        stations = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(value=code, label=name)
+                    for name, code in sorted(STATIONS_BY_NAME.items())
+                ],
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
+        chosen = user_input or {}
+        return self.async_show_form(
+            step_id="commute",
+            errors=errors,
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "home",
+                        **({"default": chosen["home"]} if "home" in chosen else {}),
+                    ): stations,
+                    vol.Required(
+                        "work",
+                        **({"default": chosen["work"]} if "work" in chosen else {}),
+                    ): stations,
+                    vol.Optional(
+                        "name", default=chosen.get("name", "Commute")
+                    ): vol.All(str, vol.Length(max=60)),
+                }
+            ),
+        )
+
+    async def async_step_bus_stop(self, user_input=None):
+        """Type a stop ID, or drop a pin to list the stops around it."""
+        errors = {}
+        near = search_start(self.hass)
+        stop = ""
+        if user_input is not None:
+            near = user_input.get("near") or near
+            stop = (user_input.get(CONF_ID) or "").strip()
+            if stop:
+                result, errors = await self._add_location(stop)
+                if result:
+                    return result
+            else:
+                try:
+                    self._nearby = await self._stops_near(near)
+                except APIAuthError:
+                    errors["base"] = "invalid_auth"
+                except APIConnectionError:
+                    errors["base"] = "cannot_connect"
+                else:
+                    if self._nearby:
+                        return await self.async_step_nearby_stop()
+                    errors["near"] = "no_stops_nearby"
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_ID, description={"suggested_value": stop}
+                ): selector.TextSelector(),
+                vol.Optional("near", default=near): selector.LocationSelector(),
+            }
+        )
+        return self.async_show_form(
+            step_id="bus_stop",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"bus_stop_url": "https://buseta.wmata.com/"},
+        )
+
+    async def _stops_near(self, point):
+        """Closest stops first, leaving out any that are already set up."""
+        api = WmataApi(
+            async_get_clientsession(self.hass),
+            self._setup_data[CONF_API_KEY],
+            hass=self.hass,
+        )
+        latitude, longitude = point["latitude"], point["longitude"]
+        configured = {
+            entry.data.get(CONF_ID)
+            for entry in self._async_current_entries()
+            if entry.data.get(CONF_SERVICE_TYPE) == "bus"
+        }
+        ranked = sorted(
+            (
+                (distance(latitude, longitude, stop["Lat"], stop["Lon"]) or 0, stop)
+                for stop in await api.nearby_stops(
+                    latitude, longitude, NEARBY_RADIUS_METERS
+                )
+                if stop["StopID"] not in configured
+            ),
+            key=lambda item: (item[0], item[1]["StopID"]),
+        )
+        return {
+            stop["StopID"]: stop_label(self.hass, stop, meters)
+            for meters, stop in ranked[:NEARBY_LIMIT]
+        }
+
+    async def async_step_nearby_stop(self, user_input=None):
+        """Choose one of the stops found around the pin."""
+        errors = {}
+        if user_input is not None:
+            if user_input[CONF_ID] == SEARCH_AGAIN:
+                return await self.async_step_bus_stop()
+            result, errors = await self._add_location(user_input[CONF_ID])
+            if result:
+                return result
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_ID): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            *[
+                                selector.SelectOptionDict(value=stop, label=label)
+                                for stop, label in self._nearby.items()
+                            ],
+                            selector.SelectOptionDict(
+                                value=SEARCH_AGAIN,
+                                label="None of these. Search somewhere else",
+                            ),
+                        ],
+                        mode=selector.SelectSelectorMode.LIST,
+                    )
+                )
+            }
+        )
+        return self.async_show_form(
+            step_id="nearby_stop",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"count": str(len(self._nearby))},
         )
 
     async def async_step_reconfigure(self, user_input=None):
@@ -323,7 +538,7 @@ class WmataOptionsFlow(OptionsFlow):
     """Manage named journeys without duplicating the station's polling."""
 
     async def async_step_init(self, user_input=None):
-        if self.config_entry.data[CONF_SERVICE_TYPE] == "map":
+        if self.config_entry.data[CONF_SERVICE_TYPE] in ("map", "commute"):
             return await self.async_step_settings(user_input)
         return self.async_show_menu(
             step_id="init",
@@ -348,31 +563,27 @@ class WmataOptionsFlow(OptionsFlow):
     async def async_step_settings(self, user_input=None):
         if user_input is not None:
             return self._save(**user_input)
-        return self.async_show_form(
-            step_id="settings",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_INTERVAL,
-                        default=self.config_entry.options.get(
-                            CONF_INTERVAL, DEFAULT_SCAN_INTERVAL
-                        ),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=15, max=300)),
-                    **(
-                        {
-                            vol.Required(
-                                CONF_DUE_SOON,
-                                default=self.config_entry.options.get(
-                                    CONF_DUE_SOON, DEFAULT_DUE_SOON
-                                ),
-                            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=60))
-                        }
-                        if self.config_entry.data[CONF_SERVICE_TYPE] != "map"
-                        else {}
-                    ),
-                }
-            ),
-        )
+        service = self.config_entry.data[CONF_SERVICE_TYPE]
+        options = self.config_entry.options
+        fields = {
+            vol.Required(
+                CONF_INTERVAL, default=options.get(CONF_INTERVAL, DEFAULT_SCAN_INTERVAL)
+            ): vol.All(vol.Coerce(int), vol.Range(min=15, max=300))
+        }
+        if service in ("train", "bus"):
+            fields[
+                vol.Required(
+                    CONF_DUE_SOON, default=options.get(CONF_DUE_SOON, DEFAULT_DUE_SOON)
+                )
+            ] = vol.All(vol.Coerce(int), vol.Range(min=1, max=60))
+        if service == "commute":
+            fields[
+                vol.Required(
+                    CONF_TRANSFER_BUFFER,
+                    default=options.get(CONF_TRANSFER_BUFFER, DEFAULT_TRANSFER_BUFFER),
+                )
+            ] = vol.All(vol.Coerce(int), vol.Range(min=1, max=30))
+        return self.async_show_form(step_id="settings", data_schema=vol.Schema(fields))
 
     def _journeys(self):
         return list(self.config_entry.options.get(CONF_JOURNEYS, []))

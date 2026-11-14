@@ -206,7 +206,7 @@ def planner_client(hass, connection, msg):
     if (
         not entry
         or entry.domain != DOMAIN
-        or entry.data.get("service_type") not in ("train", "map")
+        or entry.data.get("service_type") not in ("train", "map", "commute")
         or not coordinator
         or entity.platform != DOMAIN
         or entity.domain != "sensor"
@@ -215,7 +215,7 @@ def planner_client(hass, connection, msg):
         connection.send_error(
             msg["id"],
             "invalid_entity",
-            "Select an available WMATA rail board or train map",
+            "Select an available WMATA rail board, commute or train map",
         )
         return None
     return coordinator.api
@@ -261,14 +261,27 @@ async def plan_trip(hass, connection, msg):
             msg["id"], "invalid_route", "Choose two different Metro stations"
         )
         return
+    alternatives = await trip_alternatives(hass, api, routes)
+    # Clients rank these using the same live/timetable connection calculator as
+    # their journey card and the user's platform-change allowance.
+    connection.send_result(msg["id"], {**alternatives[0], "alternatives": alternatives})
+
+
+async def trip_alternatives(hass, api, routes, station_data=None):
+    """Attach departures and ride times to each candidate route.
+
+    Legs shared by several routes are fetched and filtered once. Pass
+    station_data to reuse predictions that were already requested together.
+    """
 
     def key(leg):
         return (leg["from"], leg["to"], tuple(leg["lines"]))
 
     unique = {key(leg): leg for route in routes for leg in route["legs"]}
-    station_data = await async_station_predictions_many(
-        hass, api, [leg["from"] for leg in unique.values()]
-    )
+    if station_data is None:
+        station_data = await async_station_predictions_many(
+            hass, api, [leg["from"] for leg in unique.values()]
+        )
     shared = await route_predictions(
         hass, api, {"legs": list(unique.values())}, station_data=station_data
     )
@@ -294,6 +307,4 @@ async def plan_trip(hass, connection, msg):
                 else None,
             }
         )
-    # Clients rank these using the same live/timetable connection calculator as
-    # their journey card and the user's platform-change allowance.
-    connection.send_result(msg["id"], {**alternatives[0], "alternatives": alternatives})
+    return alternatives

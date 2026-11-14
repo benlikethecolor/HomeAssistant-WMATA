@@ -1,20 +1,33 @@
 # Development
 
-## Tests and packaging
+Notes for working on the integration itself. If you only want to use it, the [README](../README.md) has everything you need.
 
-Run the backend tests in an HA container:
+## What's where
 
-~~~sh
+- `custom_components/wmata/` is the integration. The dashboard cards live in `www/wmata-station-card.js` as a single file with no build step, next to a vendored copy of Leaflet.
+- `tests/` has the Python tests (plain `unittest`) and `test_card.mjs` for the cards.
+- `tools/` has the release packaging, the install check that the tests run, and the map geometry generators.
+- `scripts/` is a handful of standalone scripts for poking at the WMATA API by hand: raw predictions for a station or stop, stops near a point, and a generator for the station lists. They aren't part of the integration and only need the standard library. Set `WMATA_API_KEY` in your environment and run any of them with `--help`.
+
+## Running the tests
+
+The Python tests import Home Assistant, so the easiest way to run them is inside the HA container:
+
+```sh
 docker run --rm -v "$PWD:/work" -w /work --entrypoint python \
   ghcr.io/home-assistant/home-assistant:2024.12.5 \
   -m unittest discover -s tests -v
-~~~
+```
 
-The installation tests extract a release ZIP into a temporary HA config and exercise setup, migration, and reload with fixture API responses. Use Docker's default bridge; HA's DNS resolver needs a network interface even with mocked responses. No production config or API key is needed.
+Leave Docker on its default bridge network. HA's DNS resolver wants a network interface even though the tests never talk to WMATA.
 
-For the card tests and a manual-install ZIP:
+If you'd rather not use Docker, a virtualenv with `homeassistant` installed works as well. Pin a release that supports your Python version. The suite passes that way on Python 3.13 with `homeassistant==2025.6.3`, though that combination also needs `pycares<5`.
 
-~~~sh
+The two installation tests are the slow ones and the most useful. They build the release ZIP, unpack it into a temporary config directory, and boot a real Home Assistant against the canned responses in `tests/fixtures/`. One sets everything up from scratch through the config flow. The other starts from a 2.x entry and checks the migration. No API key or real config is involved.
+
+Linting, the card tests, and a local ZIP:
+
+```sh
 python3 -m pip install -r requirements-dev.txt
 ruff check .
 ruff format --check .
@@ -22,38 +35,99 @@ npm ci
 npm run format:check
 npm test
 python3 tools/build_release.py --output /tmp/wmata.zip
-~~~
+```
 
-CI runs the tests on HA 2024.12.5, 2025.6.3, 2026.1.3, and stable, plus hassfest and HACS validation. Before releasing, also try setup and the cards against a live WMATA subscription.
+CI runs the Python tests against HA 2024.12.5, 2025.6.3, 2026.1.3, and the current stable image, plus hassfest and the HACS validator. None of that touches the real API, so before a release it's worth installing the build on a real instance and clicking through setup and all three cards with your own key.
 
-## Releases and dependency updates
+## Releasing
 
-After merging to main, update `manifest.json` and `CARD_VERSION` together, then push a matching tag such as `v4.14.0`. **Prepare release** runs the tests and validators, builds a ZIP, and creates a draft release with upgrade notes. Review the draft before publishing it. Tags must point to a commit on main.
+1. Merge to `main`.
+2. Set the same version in `manifest.json` and `CARD_VERSION` in `const.py`. The card version is the cache-busting query string on the JavaScript, so if it doesn't change, browsers keep the old cards.
+3. Push a matching tag, such as `v3.0.0`. The tag has to point at a commit on `main`.
 
-For a build without a release, run the workflow manually with **create_draft** unchecked. To create a draft manually, run it on the existing version tag with **create_draft** checked. The tag, manifest, and card versions must match.
+The **Prepare release** workflow then runs the tests and validators, builds the ZIP, and creates a draft release with an upgrade note. Read the draft over and publish it yourself. HACS only sees published releases.
 
-Dependabot checks Actions, npm tools, and the Python linter weekly after this configuration reaches the default branch. Bundled Leaflet is updated manually; keep its license and run the card tests when replacing it.
+The workflow can also be started by hand. With **create_draft** unchecked it builds and validates without creating a release. With it checked, it creates the draft for a tag that already exists. Either way the tag, manifest version, and card version have to agree or it stops.
 
-## Journey routing
+Dependabot opens weekly PRs for the GitHub Actions, the npm dev tools, and ruff. Leaflet is vendored and updated by hand. When you replace it, keep its license file and run the card tests.
 
-Station-to-station journeys use the bundled standard routes, prefer fewer transfers and then fewer stops, and filter the origin board to trains that reach the first leg’s destination. Actual diverted trains can match if their reported terminus reaches that stop; hypothetical diverted routes are not suggested. The card updates the boarding-line instructions from the matching arrivals. The journey sensor remains the origin boarding ETA. Cards estimate final destination arrival, transfer arrival, and readiness using scheduled adjacent-station `RailTime` values, live departures with their actual snapshot timestamps, and a configurable platform buffer. Each later leg starts from the first catchable departure on the preceding leg. Live departures take priority within each line’s current prediction window. Later connections use the official rail GTFS timetable, clearly marked as schedule estimates. `schedules.py` parses calendar additions/removals, platform aliases, ordered stops, pickup/drop-off rules, and service times after midnight, in America/New_York. It excludes frequency templates rather than treating them as exact departures. Feed validity dates limit estimates. Timetables are shared per subscription, downloaded at most every six hours (and on service-day rollover), parsed off the event loop, bounded in size, and backed off after failures. Closed or expired service remains unknown. The itinerary separates origin wait, riding, platform changes, and transfer waits, and reports both boarding-to-destination and from-now totals. The destination ETA adds the final ride to the last selected departure; platform allowances and transfer waits are already included in that departure and are not added twice. Direct journeys use the origin departure plus their ride time. Destination summaries and transfer boards can be toggled independently; either can keep the on-demand request active. Journeys share the origin station’s polling. Origin selection matches the line, destination, track group, car count, and nearest predicted departure within 90 seconds; prediction feeds have no stable train IDs. Missing or ambiguous matches require reselection. The quick planner enumerates loop-free routes with up to three transfers, including alternatives with more changes. It batches uncached station predictions into one request, retains configured-station polls and the shared popup cache, and filters each distinct leg once. The client ranks alternatives with the same connection calculator as its journey card, using one comparison timestamp and the user’s platform-change allowance. Each leg chooses the catchable train that reaches its goal earliest; arrival time ranks first, then live-data confidence and fewer changes for ties. Manual route/departure choices stay selected until reset; comparison estimates continue to use each route’s automatic recommendation. The quick planner uses `wmata/planner_stations` and `wmata/plan_trip` with a readable rail/map entity for credentials, the same routing/filtering/cache code, and a temporary in-memory board. It never saves configuration or creates entities. Transfer boards use an authenticated, on-demand `wmata/journey_arrivals` WebSocket command. The server resolves the saved route from the authorized entity, filters each leg by its boarding goal, and shares 30-second prediction caches across cards and map popups using the same key. Recent configured station polls are reused. Transfer predictions stay out of recorder history; only open cards request them. Scheduled travel times use WMATA’s station-to-station endpoint, cached for a day per API subscription with a five-minute failure backoff. Adjacent-station times are summed along the saved route rather than using a potentially different shortest path.
+## How journeys work
+
+### Choosing a route
+
+`journeys.py` plans over the standard service patterns in `directions.py`. It looks for the fewest transfers first and the fewest stops second. Only junctions where lines actually diverge are considered as transfer points, since changing trains at a station where both lines continue along the same track gets you nothing.
+
+A saved journey filters its origin station's board down to trains whose reported destination is at or beyond the end of the first leg. A diverted or short-turning train counts if it really does reach that stop. The planner never suggests a route that depends on a diversion, though.
+
+The journey's sensor is always the wait for the next train at the origin. Everything about transfers and arrival times is worked out by the card.
+
+### Estimating arrival
+
+The card puts an itinerary together from three things:
+
+- Live departures at the origin and at each transfer, each with the time its snapshot was taken, so an older snapshot isn't treated as fresh.
+- Scheduled ride times from WMATA's station-to-station endpoint. These are summed stop by stop along the saved route, because the endpoint's own figure for two distant stations may assume a different path.
+- The platform-change allowance, three minutes unless the user changes it.
+
+Each leg after the first starts from the first train you could actually catch, which is your arrival at the transfer plus the allowance. The destination time is the last leg's departure plus its ride. Transfer waits and platform time are already contained in that departure, so they aren't added again. A direct journey is simply the origin departure plus the ride.
+
+The summary shows the trip two ways: from boarding to destination, and from now, which adds the wait for the first train.
+
+When someone picks a specific origin train with **Use this train**, the card has to find that train again after each refresh. WMATA's predictions have no train IDs, so it matches on line, destination, track group, car count, and a predicted departure within 90 seconds of the expected one. If nothing matches, or more than one train does, the user is asked to choose again.
+
+### Falling back to the timetable
+
+Live predictions only cover the next few trains on each line. Within that window they always win. Past it, connections come from WMATA's rail GTFS feed and are labeled as schedule estimates in the card.
+
+`schedules.py` reads the feed with service days in America/New_York. It handles calendar additions and removals, the stop IDs for each platform of a transfer station, pickup and drop-off restrictions, and service times after midnight (a 25:10 departure belongs to the previous service day). Trips defined only by a frequency are skipped, because they aren't real departure times. Nothing is estimated outside the feed's validity dates. If service has ended for the day or the feed has expired, the time stays unknown.
+
+The feed is downloaded at most once every six hours per API key, and again when the service day rolls over. It's parsed in the executor, size-limited, and backed off for five minutes after a failure.
+
+### The trip planner card
+
+The planner uses two WebSocket commands, `wmata/planner_stations` and `wmata/plan_trip`. The caller passes an entity ID for a rail station or the train map. The server checks that the user can read that entity and uses its entry's API key, so the browser never handles a key. Nothing is saved and no entities are created.
+
+On the server, `candidate_journeys` lists every loop-free route with up to three transfers. Predictions for all the stations involved are fetched in one request, minus anything already cached, and each distinct leg is filtered once even when several routes share it.
+
+Ranking happens in the browser with the same connection calculator the journey card uses. All routes are compared at the same moment and with the user's platform allowance. On each leg it takes the catchable train that reaches the next stop earliest, which isn't always the first one to leave. Routes are ordered by arrival time. Ties go to the route with more live data, then to the one with fewer changes.
+
+A route or departure the user picks by hand stays selected until they reset it. The comparison list keeps showing each route's automatic best so the numbers stay comparable.
+
+### Commute sensors
+
+A commute entry (`commute.py`) plans both directions on every poll. It collects the boarding stations of every candidate route in both directions, fetches their predictions in one request, and hands the result to the same route assembly the trip planner uses (`trip_alternatives` in `websocket.py`).
+
+The arrival estimate itself is `estimates.py`, a Python port of the card's connection calculator. Two implementations of the same rules will drift unless something holds them together, so `tests/fixtures/estimates.json` lists scenarios as minute offsets and both `tests/test_estimates.py` and `tests/test_card.mjs` run every one of them. When you change how connections are worked out, change both and add a scenario.
+
+The sensors always follow the route with the earliest estimated arrival. There is no per-train selection as there is on the card.
+
+### Requests and caching
+
+- Journey sensors read from the origin station's coordinator. They add no requests.
+- A commute entry makes one prediction request per poll for all of its stations, and reuses the 30-second cache and any recently polled station entry like everything else.
+- Transfer boards come from `wmata/journey_arrivals`, which is only called while a card is open. The server looks the route up from the entity the user is allowed to read, so a client can't ask for arbitrary stations through it. The results never become entity state, which keeps them out of the recorder.
+- Station predictions requested on demand are cached for 30 seconds per API key and shared between journey cards, the planner, and the map's station popups. If a configured station was polled within the last 30 seconds, that poll is reused.
+- Ride times are cached for a day per API key, with a five-minute backoff after a failure.
+- The destination summary and the transfer boards can be switched off separately. The request keeps running as long as either is on.
 
 ## Rail directions
 
-`directions.py` resolves the station and destination on the train's route. It uses east/west for Orange and Silver, north/south for Green and Yellow, and changes direction along the Blue and Red corridors:
+`directions.py` works out a direction from where the train is and where it's heading along its route. Orange and Silver are east/west, and Green and Yellow are north/south. Blue and Red change partway:
 
-- Blue uses north/south on its Virginia branch and east/west through downtown. At Rosslyn, trains toward Franconia-Springfield are southbound and trains toward downtown are eastbound.
-- Red uses north/south on the outer legs and east/west through Metro Center, Gallery Place, and Judiciary Square.
+- Blue is north/south on its Virginia branch and east/west through downtown. At Rosslyn, a train toward Franconia-Springfield is southbound and one toward downtown is eastbound.
+- Red is north/south on both outer legs and east/west between Metro Center, Gallery Place, and Judiciary Square.
 
-These are derived travel labels, not official platform numbers. Prediction `Group` values don't determine direction. Unknown destinations and trains terminating at the current station have no direction label. The tests cover every station/line pairing, transfers, short turns, and either eastern branch for Orange/Blue/Silver service.
+These labels describe travel. They aren't official platform or track numbers, and the `Group` field in WMATA's predictions isn't used to derive them. A train with an unrecognized destination, or one terminating at the current station, gets no label.
 
-Raw `group` attributes and existing group-filtered journeys still work. Editing one of those journeys replaces the track filter with the selected direction filter.
+The tests check every station and line pairing, the transfer stations, short turns, and both eastern branches for Orange, Blue, and Silver.
 
-## Rebuilding map geometry
+Older saved filters that match on `group` still work. Editing one in the UI swaps the track filter for a direction filter.
 
-[Source URLs](../custom_components/wmata/GEO_SOURCES.md) are kept with the integration. The generators' `--help` output lists their arguments.
+## Rebuilding the map geometry
 
-- `tools/build_geographic_geometry.py` takes the station catalog array, rail and extension GIS FeatureSets (`outSR=4326`), schematic shapes, and station anchors. It writes `geo_shapes.json` and `www/geo_routes.json` using standard-library Python.
-- `tools/build_schematic_geometry.py` takes the official PDF, station anchors, and a JSON array of `[line_code, ordered_station_codes]` pairs. It needs PyMuPDF, NumPy, Pillow, SciPy, and scikit-image. The PDF hash is pinned because artwork changes can invalidate the drawing IDs.
+The source URLs are in [GEO_SOURCES.md](../custom_components/wmata/GEO_SOURCES.md), which ships with the integration. Both generators list their arguments with `--help`.
 
-Generate into a temporary directory, compare with the bundled JSON, and inspect the map before replacing assets. Keep data and vendor attribution with the integration.
+- `tools/build_geographic_geometry.py` needs only the standard library. It takes the station list from the API, the rail and Silver Line extension GIS layers (requested with `outSR=4326`), the schematic shapes, and the station anchor points, and writes `geo_shapes.json` and `www/geo_routes.json`.
+- `tools/build_schematic_geometry.py` traces the official map PDF. It needs PyMuPDF, NumPy, Pillow, SciPy, and scikit-image, along with the station anchors and a JSON list of `[line_code, ordered_station_codes]` pairs. The PDF's hash is pinned in the script, because new artwork changes the drawing IDs it relies on.
+
+Write the output to a temporary directory first, diff it against the bundled JSON, and look at both map views before replacing anything. Keep the data and Leaflet attribution files with the integration.

@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Version tag matching manifest.json (for example v4.6.3)
+        description: Version tag matching manifest.json (for example v3.0.0)
         required: true
         type: string
       create_draft:

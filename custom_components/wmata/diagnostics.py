@@ -19,7 +19,9 @@ async def async_get_config_entry_diagnostics(
     result = {
         "home_assistant_version": HA_VERSION,
         "integration_version": CARD_VERSION,
-        "service": service if service in ("train", "bus", "map") else "unknown",
+        "service": service
+        if service in ("train", "bus", "map", "commute")
+        else "unknown",
         "config_entry_version": entry.version,
         "config_entry_state": entry.state.value,
         "journey_count": len(entry.options.get(CONF_JOURNEYS, [])),
@@ -57,6 +59,17 @@ async def async_get_config_entry_diagnostics(
                 )
             ),
             "geometry_loaded": coordinator.geometry is not None,
+        }
+    elif service == "commute":
+        result["updated_at"] = data.get("updated_at")
+        result["commute"] = {
+            direction: {
+                "has_route": trip is not None,
+                "has_arrival_estimate": bool(trip and trip["arrival"] is not None),
+                "transfers": trip["transfers"] if trip else None,
+                "schedule_estimate": trip["schedule_estimate"] if trip else None,
+            }
+            for direction, trip in data.get("trips", {}).items()
         }
     else:
         arrivals = data.arrivals

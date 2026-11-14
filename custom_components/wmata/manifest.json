@@ -10,9 +10,9 @@
     "http"
   ],
   "documentation": "https://github.com/benlikethecolor/HomeAssistant-WMATA",
-  "integration_type": "hub",
+  "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/benlikethecolor/HomeAssistant-WMATA/issues",
   "requirements": [],
-  "version": "4.14.0"
+  "version": "3.0.0"
 }

@@ -1202,10 +1202,11 @@ function quickTripResponse() {
     ],
   };
 }
-async function plannerFixture(t, handler, config = {}, stationList) {
+async function plannerFixture(t, handler, config = {}, stationList, clock) {
   const f = fixture(t);
   const requests = [];
   const planner = f.window.document.createElement("wmata-trip-planner");
+  if (clock) planner._now = clock;
   planner.setConfig({ entity: "sensor.wmata_g01_arrivals", ...config });
   planner.hass = {
     ...f.hass,
@@ -1783,4 +1784,392 @@ test("a recommended origin remains visible when it falls beyond the normal row l
   assert.equal(buttons[7].getAttribute("aria-pressed"), "true");
   assert.match(buttons[7].textContent, /Recommended train/);
   assert.match(buttons[7].getAttribute("aria-label"), /20 minutes/);
+});
+
+const commute = { origin: "Foggy Bottom-GWU", destination: "NoMa-Gallaudet U" };
+const at = (hour, minute = 0) => new Date(2026, 10, 13, hour, minute);
+
+test("a commute plans itself on load, hides the search and reverses with one button", async (t) => {
+  const f = await plannerFixture(t, null, commute);
+  assert.deepEqual(
+    f.requests.map((r) => r.type),
+    ["wmata/planner_stations", "wmata/plan_trip"],
+  );
+  assert.equal(f.requests[1].origin, "C04");
+  assert.equal(f.requests[1].destination, "B35");
+  assert.ok(f.plannerRoot.querySelector("wmata-station-card"));
+  assert.equal(
+    f.plannerRoot.querySelector(".planner-title").textContent,
+    "My commute",
+  );
+  assert.equal(
+    f.plannerRoot.querySelector(".commute-route").textContent,
+    "Foggy Bottom-GWU → NoMa-Gallaudet U",
+  );
+  const search = f.plannerRoot.querySelector(".search");
+  assert.equal(search.hidden, true);
+  const reverse = f.plannerRoot.querySelector(".reverse");
+  assert.equal(reverse.getAttribute("aria-pressed"), "false");
+  reverse.click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.requests.at(-1).origin, "B35");
+  assert.equal(f.requests.at(-1).destination, "C04");
+  assert.equal(reverse.getAttribute("aria-pressed"), "true");
+  assert.equal(
+    f.plannerRoot.querySelector(".commute-route").textContent,
+    "NoMa-Gallaudet U → Foggy Bottom-GWU",
+  );
+  const edit = f.plannerRoot.querySelector(".edit");
+  edit.click();
+  assert.equal(search.hidden, false);
+  assert.equal(edit.getAttribute("aria-expanded"), "true");
+  edit.click();
+  assert.equal(search.hidden, true);
+});
+
+test("an ordinary planner still waits for Plan trip and always shows its search", async (t) => {
+  const f = await plannerFixture(t, null, { origin: "Foggy Bottom-GWU" });
+  assert.deepEqual(
+    f.requests.map((r) => r.type),
+    ["wmata/planner_stations"],
+  );
+  assert.equal(f.plannerRoot.querySelector(".commute-bar"), null);
+  assert.equal(f.plannerRoot.querySelector(".search").hidden, false);
+  assert.equal(f.planner._originInput.value, "Foggy Bottom-GWU");
+  const shown = await plannerFixture(t, null, { ...commute, show_form: true });
+  assert.equal(shown.plannerRoot.querySelector(".search").hidden, false);
+  assert.equal(shown.requests.length, 2);
+});
+
+test("reverse_after starts on the return trip and flips an open dashboard at that time", async (t) => {
+  let now = at(11, 59);
+  const f = await plannerFixture(
+    t,
+    null,
+    { ...commute, reverse_after: "12:00" },
+    undefined,
+    () => now,
+  );
+  assert.equal(f.requests.at(-1).origin, "C04");
+  f.planner._tick();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.requests.at(-1).origin, "C04");
+  now = at(12, 0);
+  f.planner._tick();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.requests.at(-1).origin, "B35");
+  assert.equal(f.requests.at(-1).destination, "C04");
+  assert.equal(
+    f.plannerRoot.querySelector(".reverse").getAttribute("aria-pressed"),
+    "true",
+  );
+  // A manual flip is kept until the next time boundary.
+  f.plannerRoot.querySelector(".reverse").click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.requests.at(-1).origin, "C04");
+  now = at(18, 30);
+  f.planner._tick();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.requests.at(-1).origin, "C04");
+
+  const evening = await plannerFixture(
+    t,
+    null,
+    { ...commute, reverse_after: 990 },
+    undefined,
+    () => at(17, 5),
+  );
+  assert.equal(evening.requests.at(-1).origin, "B35");
+  assert.equal(
+    evening.plannerRoot.querySelector(".commute-route").textContent,
+    "NoMa-Gallaudet U → Foggy Bottom-GWU",
+  );
+});
+
+test("reverse_after accepts clock times, and a misspelled station reopens the search", async (t) => {
+  const f = await plannerFixture(t, null, {
+    origin: "Foggy Bottom-GWU",
+    destination: "Nowhere Junction",
+  });
+  assert.deepEqual(
+    f.requests.map((r) => r.type),
+    ["wmata/planner_stations"],
+  );
+  assert.equal(f.plannerRoot.querySelector(".search").hidden, false);
+  assert.match(
+    f.plannerRoot.querySelector(".status").textContent,
+    /Choose two different stations/,
+  );
+  const base = { entity: "sensor.wmata_g01_arrivals", ...commute };
+  for (const value of ["12:00", "7:30", "16:45:00", 720, "", null, undefined])
+    f.planner.setConfig({ ...base, reverse_after: value });
+  for (const value of ["noon", "25:00", "12:60", 1440, -1, 12.5, true])
+    assert.throws(
+      () => f.planner.setConfig({ ...base, reverse_after: value }),
+      /reverse_after/,
+    );
+  assert.throws(
+    () => f.planner.setConfig({ ...base, show_form: "yes" }),
+    /show_form/,
+  );
+  // Without both stations the time is ignored rather than rejected.
+  f.planner._now = () => at(20);
+  f.planner.setConfig({
+    entity: "sensor.wmata_g01_arrivals",
+    origin: "Foggy Bottom-GWU",
+    reverse_after: "12:00",
+  });
+  assert.equal(f.planner._originInput.value, "Foggy Bottom-GWU");
+  assert.equal(f.planner._reversed, false);
+});
+
+test("the planner editor offers commute options only once both stations are set", async (t) => {
+  const f = await plannerFixture(t);
+  const editor = f.window.document.createElement("wmata-trip-planner-editor");
+  editor.hass = f.planner._hass;
+  editor.setConfig({ entity: "sensor.wmata_g01_arrivals", origin: "Rosslyn" });
+  const names = () => editor.querySelector("ha-form").schema.map((f) => f.name);
+  assert.ok(!names().includes("reverse_after"));
+  editor.setConfig({ entity: "sensor.wmata_g01_arrivals", ...commute });
+  assert.ok(names().includes("reverse_after"));
+  assert.ok(names().includes("show_form"));
+  const form = editor.querySelector("ha-form");
+  assert.match(form.computeLabel({ name: "reverse_after" }), /return trip/);
+  assert.match(form.computeHelper({ name: "origin" }), /commute card/);
+});
+
+const bothWays = [
+  { ...sample[0], direction: "Westbound" },
+  { ...sample[1], direction: "Westbound" },
+  { ...sample[2], direction: "Eastbound" },
+];
+
+test("rail boards filter by direction of travel and keep the choice across updates", (t) => {
+  const { card, hass, root } = fixture(t, bothWays);
+  const labels = () =>
+    [...root.querySelectorAll(".directions .chip")].map((c) => c.textContent);
+  assert.deepEqual(labels(), ["Any direction", "Eastbound", "Westbound"]);
+  [...root.querySelectorAll(".directions .chip")]
+    .find((c) => c.textContent === "Eastbound")
+    .click();
+  assert.equal(root.querySelectorAll(".arrival").length, 1);
+  assert.match(root.querySelector(".destination").textContent, /Largo/);
+  // Only destinations in that direction remain in the dropdown.
+  assert.deepEqual(
+    [...root.querySelectorAll(".destination-filter option")].map(
+      (o) => o.textContent,
+    ),
+    ["All destinations", "Downtown Largo"],
+  );
+  const state = hass.states["sensor.wmata_g01_arrivals"];
+  card.hass = {
+    states: {
+      "sensor.wmata_g01_arrivals": {
+        ...state,
+        attributes: { ...state.attributes, arrivals: bothWays.slice(0, 2) },
+      },
+    },
+  };
+  assert.equal(root.querySelectorAll(".arrival").length, 0);
+  assert.deepEqual(labels(), ["Any direction", "Eastbound", "Westbound"]);
+  assert.equal(
+    root
+      .querySelector('.directions .chip[aria-pressed="true"]')
+      .textContent.trim(),
+    "Eastbound",
+  );
+  root.querySelector(".directions .chip").click();
+  assert.equal(root.querySelectorAll(".arrival").length, 2);
+});
+
+test("direction chips need two directions, and YAML can pin one", (t) => {
+  const oneWay = fixture(t, bothWays.slice(0, 2));
+  assert.equal(oneWay.root.querySelector(".directions"), null);
+  const pinned = fixture(t, bothWays, { directions: ["eastbound"] });
+  assert.equal(pinned.root.querySelectorAll(".arrival").length, 1);
+  assert.equal(pinned.root.querySelector(".directions"), null);
+  assert.throws(
+    () =>
+      pinned.card.setConfig({
+        entity: "sensor.wmata_g01_arrivals",
+        directions: "Eastbound",
+      }),
+    /directions must be a list/,
+  );
+});
+
+test("bus boards have no direction chips because the heading is the destination", (t) => {
+  const f = fixture(t, [
+    {
+      route: "D34",
+      destination: "East to Union Station",
+      direction: "East to Union Station",
+      minutes: 2,
+      status: "predicted",
+    },
+    {
+      route: "D34",
+      destination: "West to Georgetown",
+      direction: "West to Georgetown",
+      minutes: 6,
+      status: "predicted",
+    },
+  ]);
+  const state = f.hass.states["sensor.wmata_g01_arrivals"];
+  f.card.hass = {
+    states: {
+      "sensor.wmata_g01_arrivals": {
+        ...state,
+        attributes: { ...state.attributes, service_type: "bus" },
+      },
+    },
+  };
+  assert.equal(f.root.querySelector(".directions"), null);
+  assert.equal(f.root.querySelectorAll(".arrival").length, 2);
+});
+
+test("cards follow the HA theme by default and the picker offers five looks", async (t) => {
+  const f = fixture(t);
+  assert.equal(f.card.dataset.appearance, "native");
+  const editor = f.window.document.createElement("wmata-station-card-editor");
+  editor.setConfig({ entity: "sensor.wmata_g01_arrivals" });
+  editor.hass = f.hass;
+  const choices = () =>
+    Array.from(
+      editor
+        .querySelector("ha-form")
+        .schema.find((field) => field.name === "appearance").selector.select
+        .options,
+      (o) => o.value,
+    );
+  assert.deepEqual(choices(), [
+    "native",
+    "standard",
+    "minimal",
+    "glass",
+    "daylight",
+  ]);
+  assert.equal(editor.querySelector("ha-form").data.appearance, "native");
+  // A dashboard that still names a retired look keeps it, and can see why.
+  f.card.setConfig({
+    entity: "sensor.wmata_g01_arrivals",
+    appearance: "bento",
+  });
+  assert.equal(f.card.dataset.appearance, "bento");
+  editor.setConfig({
+    entity: "sensor.wmata_g01_arrivals",
+    appearance: "bento",
+  });
+  assert.equal(choices().at(-1), "bento");
+  const map = f.window.document.createElement("wmata-train-map");
+  map.setConfig({ entity: "sensor.wmata_network_trains" });
+  assert.equal(map.config.appearance, "native");
+});
+
+test("the card's estimator matches the shared scenarios the Python sensors use", (t) => {
+  const f = fixture(t);
+  const Card = f.window.customElements.get("wmata-station-card");
+  const cases = JSON.parse(
+    readFileSync(new URL("./fixtures/estimates.json", import.meta.url), "utf8"),
+  );
+  const now = Date.UTC(2026, 10, 13, 13, 0);
+  const at = (minutes) => new Date(now + minutes * 60000).toISOString();
+  for (const scenario of cases) {
+    const legs = scenario.legs.map((leg, index) => ({
+      index,
+      available: leg.available ?? true,
+      ride_minutes: leg.ride_minutes,
+      updated_at: new Date(now - (leg.age_seconds || 0) * 1000).toISOString(),
+      arrivals: leg.arrivals.map((arrival) => ({ ...arrival })),
+      scheduled_departures: (leg.scheduled || []).map((train) => ({
+        line: train.line,
+        status: "predicted",
+        prediction_source: "schedule",
+        departure_at: at(train.departs),
+        arrival_at: at(train.arrives),
+      })),
+    }));
+    const route = {
+      destination_name: "Destination",
+      legs: legs.map((_, index) => ({
+        from: `S${index}`,
+        to: `S${index + 1}`,
+        from_name: `Station ${index}`,
+        to_name: `Station ${index + 1}`,
+        lines: ["RD"],
+      })),
+    };
+    const result = Card.estimateJourney(
+      f.hass,
+      { route, legs },
+      { transfer_buffer: scenario.buffer },
+      now,
+    );
+    const minutes = (value) =>
+      Number.isFinite(value) ? Math.round((value - now) / 60) / 1000 : null;
+    assert.equal(
+      minutes(result.arrival),
+      scenario.expect.arrival,
+      `${scenario.name}: arrival`,
+    );
+    assert.equal(
+      minutes(result.departure),
+      scenario.expect.departure,
+      `${scenario.name}: departure`,
+    );
+    assert.equal(
+      result.origin?.line ?? null,
+      scenario.expect.first_line,
+      `${scenario.name}: first train`,
+    );
+    assert.equal(
+      Boolean(result.schedule_estimate),
+      scenario.expect.schedule_estimate,
+      `${scenario.name}: schedule flag`,
+    );
+  }
+});
+
+test("a new planner card starts from a commute entry when there is one", (t) => {
+  const f = fixture(t);
+  const Planner = f.window.customElements.get("wmata-trip-planner");
+  assert.equal(
+    Planner.getStubConfig(f.hass).entity,
+    "sensor.wmata_g01_arrivals",
+  );
+  assert.equal(Planner.getStubConfig(f.hass).origin, undefined);
+  const states = {
+    ...f.hass.states,
+    "sensor.commute_back": {
+      state: "12",
+      attributes: {
+        board_type: "commute",
+        direction: "return",
+        origin_name: "Metro Center",
+        destination_name: "Foggy Bottom-GWU",
+      },
+    },
+    "sensor.commute_there": {
+      state: "9",
+      attributes: {
+        board_type: "commute",
+        direction: "outbound",
+        origin_name: "Foggy Bottom-GWU",
+        destination_name: "Metro Center",
+      },
+    },
+  };
+  const stub = Planner.getStubConfig({ states });
+  assert.equal(stub.entity, "sensor.commute_there");
+  assert.equal(stub.origin, "Foggy Bottom-GWU");
+  assert.equal(stub.destination, "Metro Center");
+  const editor = f.window.document.createElement("wmata-trip-planner-editor");
+  editor.setConfig(stub);
+  editor.hass = { states };
+  const offered = Array.from(
+    editor.querySelector("ha-form").schema[0].selector.select.options,
+    (o) => o.value,
+  );
+  assert.ok(offered.includes("sensor.commute_there"));
+  assert.ok(offered.includes("sensor.wmata_g01_arrivals"));
 });

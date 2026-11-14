@@ -4,32 +4,11 @@
     "step": {
       "user": {
         "title": "Connect to WMATA",
-        "description": "Add a station, bus stop or systemwide train map. Reuse a saved API key or enter a subscribed key from {api_key_url}.",
+        "description": "Pick what you want to add. You'll need a free WMATA API key from {api_key_url}. After the first entry, you can reuse the key you already saved.",
         "data": {
           "api_key": "API key",
           "service_type": "Service",
           "credential_source": "API key to use"
-        }
-      },
-      "location": {
-        "title": "Choose your station or bus stop",
-        "description": "Choose a rail station by name; all platforms and lines are included. For buses, enter the seven-digit stop ID.",
-        "data": {
-          "id": "Station or bus stop"
-        }
-      },
-      "reconfigure": {
-        "title": "Update API key",
-        "data": {
-          "api_key": "API key"
-        },
-        "description": "Changing this key also updates other WMATA entries that use the same saved key."
-      },
-      "reauth_confirm": {
-        "title": "Reconnect to WMATA",
-        "description": "Changing this key also updates other WMATA entries that use the same saved key.",
-        "data": {
-          "api_key": "API key"
         }
       },
       "api_key": {
@@ -37,79 +16,137 @@
         "data": {
           "api_key": "API key"
         }
+      },
+      "location": {
+        "title": "Choose your station",
+        "description": "Pick your station by name. Transfer stations include every platform and line.",
+        "data": {
+          "id": "Station"
+        }
+      },
+      "bus_stop": {
+        "title": "Find your bus stop",
+        "description": "If you know the stop ID, type it in. It's the seven-digit number on the sign at the stop, and {bus_stop_url} shows it too. Otherwise leave it empty, move the pin to where you catch the bus, and submit to see the stops around it.",
+        "data": {
+          "id": "Stop ID",
+          "near": "Or find stops near this spot"
+        },
+        "data_description": {
+          "near": "The pin's location is sent to WMATA to look up nearby stops. It isn't stored."
+        }
+      },
+      "nearby_stop": {
+        "title": "Pick your stop",
+        "description": "The {count} closest stops, nearest first. Stops on opposite sides of a street often share a name, so check the routes, or match the number against the sign.",
+        "data": {
+          "id": "Bus stop"
+        }
+      },
+      "commute": {
+        "title": "Set up your commute",
+        "description": "Pick the two stations you travel between. You'll get sensors for the trip in each direction: how long it takes right now, when the next train you'd take leaves, and when you'd arrive.",
+        "data": {
+          "home": "Home station",
+          "work": "Work station",
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "Used for the device and entity names."
+        }
+      },
+      "reconfigure": {
+        "title": "Update API key",
+        "data": {
+          "api_key": "API key"
+        },
+        "description": "Other WMATA entries that share this key are updated too."
+      },
+      "reauth_confirm": {
+        "title": "Reconnect to WMATA",
+        "description": "WMATA rejected the saved key. Enter a working one; other entries that share it are updated too.",
+        "data": {
+          "api_key": "API key"
+        }
       }
     },
     "error": {
-      "invalid_auth": "WMATA rejected the API key. Check your developer subscription and key.",
-      "cannot_connect": "Unable to connect to WMATA. Try again later.",
-      "invalid_location": "Choose a valid rail station or enter a seven-digit bus stop ID."
+      "invalid_auth": "WMATA rejected that key. Check that it's copied correctly and that your developer subscription is active.",
+      "cannot_connect": "Couldn't reach WMATA. Try again in a minute.",
+      "invalid_location": "WMATA doesn't recognize that. Stop IDs are seven digits.",
+      "no_stops_nearby": "There are no bus stops within half a mile of that spot that you haven't already added. Move the pin, or enter the stop ID.",
+      "same_station": "Pick two different stations.",
+      "no_route": "No route was found between those stations."
     },
     "abort": {
-      "already_configured": "This station or bus stop is already configured.",
-      "reauth_successful": "WMATA credentials updated.",
-      "reconfigure_successful": "WMATA credentials updated.",
+      "already_configured": "That station, stop, commute or map is already set up.",
+      "reauth_successful": "API key updated.",
+      "reconfigure_successful": "API key updated.",
       "credential_unavailable": "That saved key is no longer available. Start setup again."
+    },
+    "create_entry": {
+      "default": "Added. To see it on a dashboard, edit the dashboard, choose Add card, and search for WMATA. If the cards aren't listed yet, reload the browser tab."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Station board and saved journeys",
+        "title": "Arrival board and journeys",
         "menu_options": {
           "settings": "Polling and arrival settings",
-          "add_journey": "Custom arrival filter",
-          "edit_journey": "Edit a journey",
-          "remove_journey": "Remove a journey",
-          "add_trip": "Station-to-station journey"
+          "add_journey": "Add a custom arrival filter",
+          "edit_journey": "Edit a journey or filter",
+          "remove_journey": "Remove a journey or filter",
+          "add_trip": "Add a station-to-station journey"
         }
       },
       "settings": {
         "title": "Polling and arrival settings",
         "data": {
-          "scan_interval": "Polling interval in seconds (15\u2013300)",
-          "due_soon_minutes": "Due soon threshold in minutes (1\u201360)"
+          "scan_interval": "Polling interval in seconds (15–300)",
+          "due_soon_minutes": "Due soon threshold in minutes (1–60)",
+          "transfer_buffer": "Minutes to allow for changing platforms (1–30)"
         }
       },
       "add_journey": {
-        "title": "Add a saved journey",
-        "description": "Match any selected line/route and any selected destination. A train destination means its terminus, not an intermediate station you want to visit. Rail directions describe travel toward the next station and depend on the station and destination. Unknown directions do not match a direction filter. Empty filters accept all arrivals. Journey sensors share the station board\u2019s requests.",
+        "title": "Add a custom arrival filter",
+        "description": "Leave a field empty to match everything. A train's destination is where it terminates, not a stop along the way. Direction is the way the train is heading as it leaves this station, so trains with an unknown direction never match a direction filter. Filters reuse the station's existing polling and don't make extra requests.",
         "data": {
-          "name": "Journey name",
-          "lines": "Rail lines (empty means all)",
-          "destinations": "Train destinations / termini (empty means all)",
-          "routes": "Bus routes (comma-separated; empty means all)",
-          "direction_id": "Bus direction (optional)",
-          "rail_direction": "Travel direction (optional)"
+          "name": "Name",
+          "lines": "Rail lines",
+          "destinations": "Train destinations (last stop)",
+          "routes": "Bus routes, comma-separated",
+          "direction_id": "Bus direction",
+          "rail_direction": "Direction of travel"
         }
       },
       "journey": {
-        "title": "Edit saved journey",
-        "description": "Match any selected line/route and any selected destination. A train destination means its terminus, not an intermediate station you want to visit. Rail directions describe travel toward the next station and depend on the station and destination. Unknown directions do not match a direction filter. Empty filters accept all arrivals. Journey sensors share the station board\u2019s requests.",
+        "title": "Edit arrival filter",
+        "description": "Leave a field empty to match everything. A train's destination is where it terminates, not a stop along the way. Direction is the way the train is heading as it leaves this station, so trains with an unknown direction never match a direction filter. Filters reuse the station's existing polling and don't make extra requests.",
         "data": {
-          "name": "Journey name",
-          "lines": "Rail lines (empty means all)",
-          "destinations": "Train destinations / termini (empty means all)",
-          "routes": "Bus routes (comma-separated; empty means all)",
-          "direction_id": "Bus direction (optional)",
-          "rail_direction": "Travel direction (optional)"
+          "name": "Name",
+          "lines": "Rail lines",
+          "destinations": "Train destinations (last stop)",
+          "routes": "Bus routes, comma-separated",
+          "direction_id": "Bus direction",
+          "rail_direction": "Direction of travel"
         }
       },
       "edit_journey": {
-        "title": "Choose a journey to edit",
+        "title": "Which one do you want to edit?",
         "data": {
           "journey_id": "Journey"
         }
       },
       "remove_journey": {
-        "title": "Choose a journey to remove",
-        "description": "This removes its sensor. The station arrival board is unaffected.",
+        "title": "Which one do you want to remove?",
+        "description": "This removes its sensor. The station's arrival board stays as it is.",
         "data": {
           "journey_id": "Journey"
         }
       },
       "add_trip": {
         "title": "Where would you like to go?",
-        "description": "From {origin}. Choose the station you want to reach. The suggested route prefers fewer transfers, then fewer stops.",
+        "description": "Leaving from {origin}. Pick where you're going and you'll see the suggested route before anything is saved.",
         "data": {
           "target_station": "Destination station",
           "name": "Journey name (optional)"
@@ -117,7 +154,7 @@
       },
       "edit_trip": {
         "title": "Edit station-to-station journey",
-        "description": "From {origin}. Choose the station you want to reach. The suggested route prefers fewer transfers, then fewer stops.",
+        "description": "Leaving from {origin}. Pick where you're going and you'll see the suggested route before anything is saved.",
         "data": {
           "target_station": "Destination station",
           "name": "Journey name (optional)"
@@ -125,18 +162,18 @@
       },
       "trip_confirm": {
         "title": "Review your journey",
-        "description": "{origin} \u2192 {destination}\n\n{route}\n\nTransfers: {transfers}. The sensor shows minutes until the next train to board at the origin. Travel time and transfer waits are not included."
+        "description": "{origin} → {destination}\n\n{route}\n\nTransfers: {transfers}\n\nThe sensor counts down to the next train you can board at {origin}. The dashboard card adds ride times and transfer waits to estimate when you'll arrive."
       }
     },
     "error": {
-      "invalid_name": "Enter a journey name.",
-      "duplicate_name": "A journey with this name already exists at this station.",
-      "no_route": "Choose a different destination station. No route was found."
+      "invalid_name": "Enter a name.",
+      "duplicate_name": "This station already has a journey with that name.",
+      "no_route": "No route was found to that station. Pick a different one."
     },
     "abort": {
-      "no_journeys": "No saved journeys exist for this station yet. Choose Add a journey to create one.",
-      "journey_not_found": "This journey no longer exists. Reopen Configure.",
-      "rail_only": "Station-to-station journeys are available for rail stations."
+      "no_journeys": "This station doesn't have any journeys or filters yet. Add one from the previous menu.",
+      "journey_not_found": "That journey no longer exists. Close this dialog and open Configure again.",
+      "rail_only": "Station-to-station journeys are only available for rail stations."
     }
   }
 }

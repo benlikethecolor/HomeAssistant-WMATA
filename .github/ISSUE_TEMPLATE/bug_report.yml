@@ -10,7 +10,7 @@ body:
     id: integration_version
     attributes:
       label: WMATA integration version
-      placeholder: "4.14.0"
+      placeholder: "3.0.0"
     validations:
       required: true
   - type: input
@@ -27,6 +27,7 @@ body:
       options:
         - Rail arrivals or journeys
         - Bus arrivals or journeys
+        - Commute sensors or trip planner
         - Live train map
         - Installation or setup
     validations:
