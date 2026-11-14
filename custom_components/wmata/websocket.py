@@ -124,8 +124,14 @@ async def journey_arrivals(hass, connection, msg):
     connection.send_result(msg["id"], {"legs": legs})
 
 
-async def route_predictions(hass, api, route, coordinator=None, station_data=None):
-    """Share filtering and prediction caches between saved and temporary routes."""
+async def route_predictions(
+    hass, api, route, coordinator=None, station_data=None, timetable=True
+):
+    """Share filtering and prediction caches between saved and temporary routes.
+
+    Pass timetable=False to answer from live predictions alone, without waiting
+    for the rail timetable to download.
+    """
 
     async def predictions(index, leg):
         result = {
@@ -176,7 +182,7 @@ async def route_predictions(hass, api, route, coordinator=None, station_data=Non
     for result, leg in zip(legs, route["legs"], strict=True):
         result["ride_minutes"] = ride_minutes(leg, times)
     try:
-        schedule = await api.rail_schedule()
+        schedule = await api.rail_schedule() if timetable else None
     except (APIAuthError, APIConnectionError):
         schedule = None
     now = datetime.now(UTC)
@@ -267,7 +273,7 @@ async def plan_trip(hass, connection, msg):
     connection.send_result(msg["id"], {**alternatives[0], "alternatives": alternatives})
 
 
-async def trip_alternatives(hass, api, routes, station_data=None):
+async def trip_alternatives(hass, api, routes, station_data=None, timetable=True):
     """Attach departures and ride times to each candidate route.
 
     Legs shared by several routes are fetched and filtered once. Pass
@@ -283,7 +289,11 @@ async def trip_alternatives(hass, api, routes, station_data=None):
             hass, api, [leg["from"] for leg in unique.values()]
         )
     shared = await route_predictions(
-        hass, api, {"legs": list(unique.values())}, station_data=station_data
+        hass,
+        api,
+        {"legs": list(unique.values())},
+        station_data=station_data,
+        timetable=timetable,
     )
     by_leg = dict(zip(unique, shared, strict=True))
     alternatives = []

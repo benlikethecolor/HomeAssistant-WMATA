@@ -1,5 +1,6 @@
 """Commute entries: setup, one shared request per poll, and travel-time sensors."""
 
+import asyncio
 import json
 import unittest
 from datetime import UTC, datetime
@@ -61,6 +62,7 @@ class CommuteTest(unittest.IsolatedAsyncioTestCase):
             trains=AsyncMock(return_value=TRAINS),
             rail_times=AsyncMock(return_value=RIDE_TIMES),
             rail_schedule=AsyncMock(side_effect=APIConnectionError("No timetable")),
+            rail_schedule_ready=lambda: True,
         )
 
     async def asyncTearDown(self):
@@ -109,6 +111,41 @@ class CommuteTest(unittest.IsolatedAsyncioTestCase):
         self.coordinator.data = None
         self.assertIsNone(self.sensor("return", "travel_time").native_value)
 
+    async def test_setup_does_not_wait_for_the_timetable_download(self):
+        loaded = asyncio.Event()
+        ready = False
+
+        async def download():
+            nonlocal ready
+            await loaded.wait()
+            ready = True
+
+        self.api.rail_schedule = AsyncMock(side_effect=download)
+        self.api.rail_schedule_ready = lambda: ready
+        self.coordinator.async_request_refresh = AsyncMock()
+        # The first estimate comes back from live trains while it downloads.
+        self.coordinator.data = await self.coordinator._async_update_data()
+        self.assertEqual(self.sensor("outbound", "travel_time").native_value, 8)
+        task = self.coordinator._timetable_task
+        self.assertFalse(task.done())
+        await self.coordinator._async_update_data()
+        self.assertIs(self.coordinator._timetable_task, task)
+        loaded.set()
+        await task
+        # Once it has loaded, one refresh brings the timetable into the estimate.
+        self.coordinator.async_request_refresh.assert_awaited_once()
+        self.api.rail_schedule.reset_mock(side_effect=True)
+        self.api.rail_schedule.return_value = None
+        await self.coordinator._async_update_data()
+        self.api.rail_schedule.assert_awaited()
+
+    async def test_a_failed_timetable_download_does_not_cause_a_refresh_loop(self):
+        self.api.rail_schedule_ready = lambda: False
+        self.coordinator.async_request_refresh = AsyncMock()
+        await self.coordinator._async_update_data()
+        await self.coordinator._timetable_task
+        self.coordinator.async_request_refresh.assert_not_awaited()
+
     async def test_platform_allowance_comes_from_the_entry_options(self):
         with patch(
             "custom_components.wmata.commute.async_get_clientsession",
@@ -151,12 +188,15 @@ class CommuteFlowTest(unittest.IsolatedAsyncioTestCase):
         # Both platforms of a transfer station are the same place.
         same = await flow.async_step_commute({"home": "A01", "work": "C01"})
         self.assertEqual(same["errors"], {"work": "same_station"})
+        typo = await flow.async_step_commute({"home": "C04", "work": "Metro Centre"})
+        self.assertEqual(typo["errors"], {"work": "unknown_station"})
         with (
             patch.object(flow, "async_set_unique_id", AsyncMock()) as unique,
             patch.object(flow, "_abort_if_unique_id_configured"),
         ):
+            # A name typed into the search box works as well as a picked row.
             result = await flow.async_step_commute(
-                {"home": "C04", "work": "C01", "name": " "}
+                {"home": "foggy bottom-gwu", "work": "C01", "name": " "}
             )
         unique.assert_awaited_once_with("commute:C04:A01")
         self.assertEqual(result["title"], "Foggy Bottom-GWU ↔ Metro Center")

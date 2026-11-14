@@ -11,6 +11,23 @@ const WMATA_DEFAULT_APPEARANCE = "native";
 const validAppearance = (value) =>
   WMATA_APPEARANCES.some((option) => option.value === value) ||
   WMATA_RETIRED_APPEARANCES.includes(value);
+// While it starts, Home Assistant's frontend can swap in a scoped element
+// registry. Elements defined before the swap are invisible to it, and their
+// cards show "Configuration error". This file is loaded early enough to lose
+// that race, so on an HA page wait until the app itself has been defined.
+const wmataFrontendReady =
+  document.querySelector("home-assistant") &&
+  !customElements.get("home-assistant")
+    ? customElements.whenDefined("home-assistant")
+    : null;
+const wmataDefine = (name, element) => {
+  const define = () => {
+    if (!window.customElements.get(name))
+      window.customElements.define(name, element);
+  };
+  if (wmataFrontendReady) wmataFrontendReady.then(define);
+  else define();
+};
 const appearanceChoices = (current) =>
   WMATA_RETIRED_APPEARANCES.includes(current)
     ? [...WMATA_APPEARANCES, { value: current, label: `${current} (retired)` }]
@@ -1479,10 +1496,8 @@ const appearanceChoices = (current) =>
       this._form.data = this._config;
     }
   }
-  if (!customElements.get("wmata-station-card"))
-    customElements.define("wmata-station-card", WmataStationCard);
-  if (!customElements.get("wmata-station-card-editor"))
-    customElements.define("wmata-station-card-editor", WmataStationCardEditor);
+  wmataDefine("wmata-station-card", WmataStationCard);
+  wmataDefine("wmata-station-card-editor", WmataStationCardEditor);
   window.customCards = window.customCards || [];
   if (!window.customCards.some((c) => c.type === "wmata-station-card"))
     window.customCards.push({
@@ -2172,10 +2187,8 @@ const appearanceChoices = (current) =>
       this._form.data = this._config;
     }
   }
-  if (!customElements.get("wmata-trip-planner"))
-    customElements.define("wmata-trip-planner", WmataTripPlanner);
-  if (!customElements.get("wmata-trip-planner-editor"))
-    customElements.define("wmata-trip-planner-editor", WmataTripPlannerEditor);
+  wmataDefine("wmata-trip-planner", WmataTripPlanner);
+  wmataDefine("wmata-trip-planner-editor", WmataTripPlannerEditor);
   if (!window.customCards.some((c) => c.type === "wmata-trip-planner"))
     window.customCards.push({
       type: "wmata-trip-planner",
@@ -2886,7 +2899,7 @@ if (!customElements.get("wmata-train-map")) {
       body.append(viewport, info);
     }
   }
-  customElements.define("wmata-train-map", WmataTrainMap);
+  wmataDefine("wmata-train-map", WmataTrainMap);
   window.customCards.push({
     type: "wmata-train-map",
     name: "WMATA Train Map",
@@ -3020,5 +3033,5 @@ if (!customElements.get("wmata-map-editor")) {
       this.form.data = this.config;
     }
   }
-  customElements.define("wmata-map-editor", WmataMapEditor);
+  wmataDefine("wmata-map-editor", WmataMapEditor);
 }

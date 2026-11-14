@@ -195,25 +195,34 @@ class WmataApi:
             return times
 
     async def _download_rail_schedule(self):
+        # Take a turn in the request queue, then let go of it. The download can
+        # run for many seconds and must not hold up every station's polling.
         async with self._state.lock:
             await self._pace()
-            try:
-                async with self.session.get(
-                    f"{URL}/gtfs/rail-gtfs-static.zip",
-                    headers=self.headers,
-                    timeout=aiohttp.ClientTimeout(total=40),
-                ) as response:
-                    self._check_status(response)
-                    data = bytearray()
-                    async for chunk in response.content.iter_chunked(65536):
-                        data.extend(chunk)
-                        if len(data) > 20000000:
-                            raise APIConnectionError(
-                                "Rail timetable exceeds size limit"
-                            )
-                    return bytes(data)
-            except (aiohttp.ClientError, TimeoutError, ValueError) as err:
-                raise APIConnectionError("Unable to download rail timetable") from err
+        try:
+            async with self.session.get(
+                f"{URL}/gtfs/rail-gtfs-static.zip",
+                headers=self.headers,
+                timeout=aiohttp.ClientTimeout(total=40),
+            ) as response:
+                self._check_status(response)
+                data = bytearray()
+                async for chunk in response.content.iter_chunked(65536):
+                    data.extend(chunk)
+                    if len(data) > 20000000:
+                        raise APIConnectionError("Rail timetable exceeds size limit")
+                return bytes(data)
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            raise APIConnectionError("Unable to download rail timetable") from err
+
+    def rail_schedule_ready(self) -> bool:
+        """Whether today's timetable is already in memory."""
+        day = datetime.now(UTC).astimezone(ZONE).date().isoformat()
+        return (
+            self._state.schedule is not None
+            and self._state.schedule_date == day
+            and asyncio.get_running_loop().time() < self._state.schedule_expiry
+        )
 
     async def rail_schedule(self):
         """Cache official schedules per subscription; parsing never blocks HA."""

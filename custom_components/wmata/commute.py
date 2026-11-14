@@ -34,6 +34,7 @@ class CommuteCoordinator(DataUpdateCoordinator):
         self.api = WmataApi(
             async_get_clientsession(hass), entry.data[CONF_API_KEY], hass=hass
         )
+        self._timetable_task = None
         super().__init__(
             hass,
             logging.getLogger(__name__),
@@ -50,7 +51,25 @@ class CommuteCoordinator(DataUpdateCoordinator):
             return self.home, self.work
         return self.work, self.home
 
+    async def _load_timetable(self):
+        """Fetch the timetable off to the side, then refresh with it."""
+        try:
+            await self.api.rail_schedule()
+        except (APIAuthError, APIConnectionError):
+            return
+        if self.api.rail_schedule_ready():
+            await self.async_request_refresh()
+
     async def _async_update_data(self):
+        # The timetable is a large download. Start from live trains alone
+        # rather than making setup wait for it; it joins in once it has loaded.
+        timetable = self.api.rail_schedule_ready()
+        if not timetable and (
+            self._timetable_task is None or self._timetable_task.done()
+        ):
+            self._timetable_task = self.hass.async_create_background_task(
+                self._load_timetable(), "wmata rail timetable"
+            )
         try:
             # Cached for an hour, so this mostly just notices a revoked key.
             await self.api.stations()
@@ -72,7 +91,7 @@ class CommuteCoordinator(DataUpdateCoordinator):
             trips = {}
             for direction, group in routes.items():
                 alternatives = await trip_alternatives(
-                    self.hass, self.api, group, station_data
+                    self.hass, self.api, group, station_data, timetable
                 )
                 trips[direction] = best_trip(
                     alternatives, datetime.now(UTC).timestamp(), self.buffer

@@ -2173,3 +2173,31 @@ test("a new planner card starts from a commute entry when there is one", (t) => 
   assert.ok(offered.includes("sensor.commute_there"));
   assert.ok(offered.includes("sensor.wmata_g01_arrivals"));
 });
+
+test("on a Home Assistant page the cards wait for the app before registering", async () => {
+  const window = new Window({ url: "http://localhost/" });
+  // HA's index.html already contains the app element when extra modules run.
+  window.document.body.append(window.document.createElement("home-assistant"));
+  window.eval(source);
+  const tags = [
+    "wmata-station-card",
+    "wmata-station-card-editor",
+    "wmata-trip-planner",
+    "wmata-trip-planner-editor",
+    "wmata-train-map",
+    "wmata-map-editor",
+  ];
+  for (const tag of tags)
+    assert.equal(window.customElements.get(tag), undefined, tag);
+  // The picker entries don't depend on the registry, so they can go in early.
+  assert.equal(window.customCards.length, 3);
+  window.eval(
+    'customElements.define("home-assistant", class extends HTMLElement {})',
+  );
+  await window.customElements.whenDefined("wmata-map-editor");
+  for (const tag of tags) assert.ok(window.customElements.get(tag), tag);
+  const card = window.document.createElement("wmata-station-card");
+  card.setConfig({ entity: "sensor.anything" });
+  assert.equal(card.dataset.appearance, "native");
+  await window.happyDOM.close();
+});

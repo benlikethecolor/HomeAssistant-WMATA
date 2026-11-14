@@ -19,7 +19,7 @@
       },
       "location": {
         "title": "Choose your station",
-        "description": "Pick your station by name. Transfer stations include every platform and line.",
+        "description": "Start typing to find your station. Transfer stations include every platform and line.",
         "data": {
           "id": "Station"
         }
@@ -75,7 +75,8 @@
       "invalid_location": "WMATA doesn't recognize that. Stop IDs are seven digits.",
       "no_stops_nearby": "There are no bus stops within half a mile of that spot that you haven't already added. Move the pin, or enter the stop ID.",
       "same_station": "Pick two different stations.",
-      "no_route": "No route was found between those stations."
+      "no_route": "No route was found between those stations.",
+      "unknown_station": "That isn't a Metro station. Start typing and pick one from the list."
     },
     "abort": {
       "already_configured": "That station, stop, commute or map is already set up.",
@@ -168,7 +169,8 @@
     "error": {
       "invalid_name": "Enter a name.",
       "duplicate_name": "This station already has a journey with that name.",
-      "no_route": "No route was found to that station. Pick a different one."
+      "no_route": "No route was found to that station. Pick a different one.",
+      "unknown_station": "That isn't a Metro station. Start typing and pick one from the list."
     },
     "abort": {
       "no_journeys": "This station doesn't have any journeys or filters yet. Add one from the previous menu.",

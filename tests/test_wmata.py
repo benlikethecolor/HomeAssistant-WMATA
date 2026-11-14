@@ -28,7 +28,9 @@ from custom_components.wmata.api import (
 from custom_components.wmata.config_flow import (
     WmataConfigFlow,
     WmataOptionsFlow,
+    resolve_station,
     search_start,
+    station_selector,
     stop_label,
     validate_location,
 )
@@ -387,6 +389,30 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
             ):
                 form = await flow.async_step_location({"id": "A01"})
             self.assertEqual(form["errors"][field], code)
+
+    async def test_station_lists_are_searchable_and_accept_typed_names(self):
+        self.assertEqual(resolve_station("Metro Center"), "A01")
+        self.assertEqual(resolve_station(" l'enfant plaza "), "D03")
+        self.assertEqual(resolve_station("k08"), "K08")
+        for bad in ("", None, "Metro", "Z99"):
+            self.assertIsNone(resolve_station(bad))
+        config = station_selector(exclude="Metro Center").config
+        self.assertTrue(config["custom_value"])
+        self.assertNotIn("Metro Center", [o["label"] for o in config["options"]])
+        self.assertEqual(len(station_selector().config["options"]), 98)
+        flow = WmataConfigFlow()
+        flow.hass = self.hass
+        flow._async_current_entries = MagicMock(return_value=[])
+        flow._setup_data = {"api_key": "test", "service_type": "train"}
+        form = await flow.async_step_location({"id": "Nowhere"})
+        self.assertEqual(form["errors"], {"id": "unknown_station"})
+        with patch.object(
+            flow, "_add_location", AsyncMock(return_value=("created", {}))
+        ) as add:
+            self.assertEqual(
+                await flow.async_step_location({"id": "union station"}), "created"
+            )
+        add.assert_awaited_once_with("B03")
 
     async def test_initial_auth_error_keeps_key_editable(self):
         flow = WmataConfigFlow()

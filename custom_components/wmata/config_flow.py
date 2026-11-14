@@ -82,6 +82,34 @@ def stop_label(hass, stop: dict, meters: float) -> str:
     )
 
 
+def station_selector(exclude: str | None = None):
+    """Every station once, by name, in a list you can type into to search.
+
+    Allowing a typed value is what makes the frontend show a searchable box
+    rather than a plain list of nearly a hundred rows.
+    """
+    return selector.SelectSelector(
+        selector.SelectSelectorConfig(
+            options=[
+                selector.SelectOptionDict(value=code, label=name)
+                for name, code in sorted(STATIONS_BY_NAME.items())
+                if name != exclude
+            ],
+            custom_value=True,
+            mode=selector.SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def resolve_station(value) -> str | None:
+    """Accept a listed choice, or a station name or code typed by hand."""
+    text = str(value or "").strip()
+    if text.upper() in STATION_CODE_MAP:
+        return text.upper()
+    names = {name.casefold(): code for name, code in STATIONS_BY_NAME.items()}
+    return names.get(text.casefold())
+
+
 def line_selector():
     return selector.SelectSelector(
         selector.SelectSelectorConfig(
@@ -296,27 +324,14 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
         """Pick a rail station by name."""
         errors = {}
         if user_input is not None:
-            result, errors = await self._add_location(user_input[CONF_ID])
-            if result:
-                return result
-        # Show each physical station once by name.
-        choices = {}
-        for code, name in STATION_CODE_MAP.items():
-            choices.setdefault(name, code)
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_ID): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(value=code, label=name)
-                            for name, code in sorted(choices.items())
-                        ],
-                        custom_value=False,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                )
-            }
-        )
+            station = resolve_station(user_input[CONF_ID])
+            if station is None:
+                errors[CONF_ID] = "unknown_station"
+            else:
+                result, errors = await self._add_location(station)
+                if result:
+                    return result
+        schema = vol.Schema({vol.Required(CONF_ID): station_selector()})
         return self.async_show_form(
             step_id="location", data_schema=schema, errors=errors
         )
@@ -325,8 +340,13 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
         """Two stations become travel-time sensors for the trip each way."""
         errors = {}
         if user_input is not None:
-            home, work = user_input["home"], user_input["work"]
-            if STATION_CODE_MAP[home] == STATION_CODE_MAP[work]:
+            home = resolve_station(user_input["home"])
+            work = resolve_station(user_input["work"])
+            if home is None:
+                errors["home"] = "unknown_station"
+            elif work is None:
+                errors["work"] = "unknown_station"
+            elif STATION_CODE_MAP[home] == STATION_CODE_MAP[work]:
                 errors["work"] = "same_station"
             elif plan_journey(home, work) is None:
                 errors["work"] = "no_route"
@@ -346,15 +366,7 @@ class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
                         "location_name": name,
                     },
                 )
-        stations = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[
-                    selector.SelectOptionDict(value=code, label=name)
-                    for name, code in sorted(STATIONS_BY_NAME.items())
-                ],
-                mode=selector.SelectSelectorMode.DROPDOWN,
-            )
-        )
+        stations = station_selector()
         chosen = user_input or {}
         return self.async_show_form(
             step_id="commute",
@@ -688,12 +700,15 @@ class WmataOptionsFlow(OptionsFlow):
         )
         errors = {}
         if user_input is not None:
-            route = plan_journey(origin, user_input["target_station"])
+            target = resolve_station(user_input["target_station"])
+            route = plan_journey(origin, target) if target else None
             name = (
                 user_input.get("name", "").strip()
-                or f"To {STATION_CODE_MAP.get(user_input['target_station'], 'destination')}"
+                or f"To {STATION_CODE_MAP.get(target, 'destination')}"
             )
-            if route is None:
+            if target is None:
+                errors["target_station"] = "unknown_station"
+            elif route is None:
                 errors["base"] = "no_route"
             elif any(
                 j["name"].casefold() == name.casefold() and j["id"] != self._editing_id
@@ -705,7 +720,7 @@ class WmataOptionsFlow(OptionsFlow):
                     "id": self._editing_id or uuid4().hex,
                     "name": name,
                     "kind": "station_to_station",
-                    "target_station": user_input["target_station"],
+                    "target_station": target,
                     "route": route,
                 }
                 return await self.async_step_trip_confirm()
@@ -722,16 +737,7 @@ class WmataOptionsFlow(OptionsFlow):
                             if current.get("target_station")
                             else {}
                         ),
-                    ): selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=[
-                                selector.SelectOptionDict(value=code, label=name)
-                                for name, code in sorted(STATIONS_BY_NAME.items())
-                                if name != origin_name
-                            ],
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                        )
-                    ),
+                    ): station_selector(exclude=origin_name),
                     vol.Optional("name", default=current.get("name", "")): vol.All(
                         str, vol.Length(max=80)
                     ),
