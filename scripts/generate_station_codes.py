@@ -1,86 +1,61 @@
-import os
-import requests
+"""Regenerate the station lists from WMATA's current station catalog.
 
-api_key = os.environ['wmata_api']
+    python scripts/generate_station_codes.py            # print STATION_CODE_MAP
+    python scripts/generate_station_codes.py --markdown  # rewrite the docs table
 
-HEADERS = {
-    "api_key": api_key
+Run this when WMATA renames or adds a station, then paste the printed map into
+custom_components/wmata/const.py.
+"""
+
+import argparse
+from pathlib import Path
+
+from _api import get
+
+DOC = Path(__file__).resolve().parents[1] / "docs" / "METRO_STATION_CODES.md"
+LINES = {
+    "BL": "Blue",
+    "GR": "Green",
+    "OR": "Orange",
+    "RD": "Red",
+    "SV": "Silver",
+    "YL": "Yellow",
 }
 
 
-def update_file(train_stations: str, filename: str = "METRO_STATION_CODES.md"):
-    train_stations = get_train_stations()
-
-    readme_output = '| Name | Line | Code\n|:-----|:----:|:-----|\n'
-
-    for station in train_stations:
-        print(station)
-        lines = [station['LineCode1']]
-
-        if station['LineCode2']:
-            lines.append(station['LineCode2'])
-        if station['LineCode3']:
-            lines.append(station['LineCode3'])
-        if station['LineCode4']:
-            lines.append(station['LineCode4'])
-
-        for line in lines:
-            if line == 'BL':
-                lines[lines.index(line)] = 'Blue'
-            elif line == 'GR':
-                lines[lines.index(line)] = 'Green'
-            elif line == 'OR':
-                lines[lines.index(line)] = 'Orange'
-            elif line == 'RD':
-                lines[lines.index(line)] = 'Red'
-            elif line == 'SV':
-                lines[lines.index(line)] = 'Silver'
-            elif line == 'YL':
-                lines[lines.index(line)] = 'Yellow'
-
-        lines.sort()
-        lines = ', '.join(lines)
-
-        readme_output += '| %s | %s | %s |\n' % (
-            station['Name'], lines, station['Code'])
-
-    print(readme_output)
-
-    new_file = open(filename, "w")
-    new_file.write(readme_output)
-
-
-def get_train_stations():
-    output = requests.get(
-        headers=HEADERS,
-        url="https://api.wmata.com/Rail.svc/json/jStations"
+def station_map(stations: list[dict]) -> str:
+    """Python source for STATION_CODE_MAP, ordered by code."""
+    rows = "".join(
+        f"    {station['Code']!r}: {station['Name']!r},\n"
+        for station in sorted(stations, key=lambda station: station["Code"])
     )
-
-    train_stations = output.json()["Stations"]
-    train_stations.sort(key=lambda x: x['Name'])
-
-    return train_stations
+    return "STATION_CODE_MAP = {\n" + rows + "}"
 
 
-def create_station_dictionary():
-    train_stations = get_train_stations()
-    train_stations.sort(key=lambda x: x['Code'])
-
-    station_dict = {}
-
-    print('STATION_CODE_MAP = {')
-
-    for station in train_stations:
-        print("'%s': '%s'," % (station['Code'],
-              station['Name'].replace("'", "\'")))
-    print('}')
-
-    # return station_dict
+def markdown_table(stations: list[dict]) -> str:
+    """The table in docs/METRO_STATION_CODES.md, ordered by name."""
+    table = "| Name | Line | Code\n|:-----|:----:|:-----|\n"
+    for station in sorted(stations, key=lambda station: station["Name"]):
+        codes = (station.get(f"LineCode{number}") for number in range(1, 5))
+        lines = sorted(LINES.get(code, code) for code in codes if code)
+        table += f"| {station['Name']} | {', '.join(lines)} | {station['Code']} |\n"
+    return table
 
 
-def main():
-    create_station_dictionary()
-    # update_file(train_stations)
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--markdown",
+        action="store_true",
+        help=f"rewrite {DOC.relative_to(DOC.parents[1])} instead of printing the map",
+    )
+    args = parser.parse_args()
+    stations = get("Rail.svc/json/jStations")["Stations"]
+    if args.markdown:
+        DOC.write_text(markdown_table(stations))
+        print(f"Wrote {len(stations)} stations to {DOC}")
+    else:
+        print(station_map(stations))
 
 
 if __name__ == "__main__":

@@ -1,29 +1,18 @@
-import json
-import os
-import requests
+"""Print WMATA's raw bus predictions for a stop.
+
+python scripts/get_next_buses.py 1001195
+"""
+
+import argparse
+
+from _api import get, show
 
 
-api_key = os.environ['wmata_api']
-
-HEADERS = {
-    "api_key": api_key
-}
-
-
-def get_next_buses(bus_stop: str):
-    output = requests.get(
-        headers=HEADERS,
-        url="http://api.wmata.com/NextBusService.svc/json/jPredictions?StopID=%s" % bus_stop
-    )
-
-    print(json.dumps(output.json(), indent=4))
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("stop", help="seven-digit stop ID from the sign at the stop")
+    show(get("NextBusService.svc/json/jPredictions", StopID=parser.parse_args().stop))
 
 
-def main():
-    bus_stop = input('Enter your bus stop ID:\n')
-
-    get_next_buses(bus_stop=bus_stop)
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
