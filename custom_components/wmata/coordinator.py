@@ -47,6 +47,8 @@ class APIData:
     # Every current alert for this service, and this station's broken units.
     alerts: list[dict] = field(default_factory=list)
     outages: list[dict] = field(default_factory=list)
+    alerts_status: dict | None = None
+    outages_status: dict | None = None
 
     @property
     def arrivals(self) -> list[dict]:
@@ -142,6 +144,8 @@ class WmataCoordinator(DataUpdateCoordinator[APIData]):
                         for unit in await self.api.unit_outages()
                         if unit["station_code"] in self.codes
                     ],
+                    alerts_status=self.api.alert_status("rail"),
+                    outages_status=self.api.alert_status("units"),
                 )
             buses = await self.api.buses(self.location)
             self.routes.update(
@@ -153,6 +157,7 @@ class WmataCoordinator(DataUpdateCoordinator[APIData]):
                 sorted_predictions(buses, "Minutes"),
                 [],
                 alerts=await self.api.bus_alerts(),
+                alerts_status=self.api.alert_status("bus"),
             )
         except APIAuthError as err:
             raise ConfigEntryAuthFailed("WMATA API key is invalid") from err

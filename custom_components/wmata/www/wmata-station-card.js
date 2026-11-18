@@ -50,16 +50,46 @@ const appearanceChoices = (current) =>
     return node;
   };
   // Service alerts and broken elevators, drawn the same way on every card.
-  const alertList = (alerts, outages) => {
+  const alertList = (alerts, outages, alertStatus, outageStatus) => {
     const shown = (Array.isArray(alerts) ? alerts : []).filter(
       (alert) => alert && typeof alert.description === "string",
     );
     const elevators = (Array.isArray(outages) ? outages : []).filter(
       (unit) => unit?.type === "elevator",
     );
-    if (!shown.length && !elevators.length) return null;
+    if (
+      !shown.length &&
+      !elevators.length &&
+      !alertStatus?.stale &&
+      !outageStatus?.stale
+    )
+      return null;
     const list = element("div", "alerts");
     list.setAttribute("role", "status");
+    for (const [label, status, count] of [
+      ["Service alerts", alertStatus, shown.length],
+      ["Elevator outages", outageStatus, elevators.length],
+    ]) {
+      if (!status || (!status.stale && !count)) continue;
+      const checked = Date.parse(status.updated_at);
+      const time = Number.isFinite(checked)
+        ? "Last successfully checked " + new Date(checked).toLocaleString()
+        : "No successful check yet";
+      const item = element(
+        "div",
+        status.stale ? "alert feed-status stale" : "feed-status",
+      );
+      item.dataset.stale = String(Boolean(status.stale));
+      item.append(
+        element(
+          "strong",
+          null,
+          label + (status.stale ? " · Stale — could not refresh" : ""),
+        ),
+        element("span", null, time),
+      );
+      list.append(item);
+    }
     for (const alert of shown.slice(0, 4)) {
       const names = [
         ...(alert.lines || []).map((code) => COLORS[code]?.[0] || code),
@@ -70,7 +100,8 @@ const appearanceChoices = (current) =>
         element(
           "strong",
           null,
-          (alert.type === "delay" ? "Delay" : "Alert") +
+          (alertStatus?.stale ? "Last known " : "") +
+            (alert.type === "delay" ? "Delay" : "Alert") +
             (names.length ? " · " + names.join(", ") : ""),
         ),
         element("span", null, alert.description),
@@ -84,7 +115,13 @@ const appearanceChoices = (current) =>
     for (const unit of elevators) {
       const item = element("div", "alert outage");
       item.append(
-        element("strong", null, "Elevator out of service"),
+        element(
+          "strong",
+          null,
+          outageStatus?.stale
+            ? "Last known elevator outage"
+            : "Elevator out of service",
+        ),
         element("span", null, unit.location || "Location not given"),
       );
       list.append(item);
@@ -132,6 +169,7 @@ const appearanceChoices = (current) =>
     .journey-eta{margin:0 22px 16px;padding:12px;border:1px solid var(--divider-color,#e2e7eb);border-radius:12px}.journey-eta-heading{font-size:12px;color:var(--secondary-text-color,#64717b);margin-bottom:5px}.journey-eta-time{font-size:22px;font-weight:650;line-height:1.4}.journey-eta-details{font-size:11px;line-height:1.6;color:var(--secondary-text-color,#64717b);margin-top:4px}
     .connection-summary{font-size:12px;line-height:1.6;margin:0 0 10px;color:var(--secondary-text-color,#64717b)}.connection-label{font-size:11px;font-weight:600;margin-top:5px}.arrival[data-connection=likely]{background:color-mix(in srgb,var(--success-color,#278057) 12%,transparent);border-radius:8px;padding-left:8px;padding-right:8px}.arrival[data-connection=likely] .connection-label{color:var(--success-color,#278057)}.arrival[data-connection=early] .connection-label{color:var(--secondary-text-color,#64717b)}
     .leg-heading{padding:0 22px 12px;font-size:13px;font-weight:600;line-height:1.5}.journey-transfers{border-top:1px solid var(--divider-color,#e2e7eb);padding:16px 22px}.transfer-note{font-size:12px;line-height:1.5;color:var(--secondary-text-color,#64717b);margin:0 0 14px}.transfer-station{margin-top:16px}.transfer-title{font-size:14px;font-weight:600;line-height:1.5;margin:0 0 8px}.transfer-status,.transfer-updated{font-size:11px;color:var(--secondary-text-color,#64717b);line-height:1.5}.transfer-updated{margin-top:8px}.transfer-updated[data-stale=true]{color:var(--warning-color,#9a660d)}
+    .feed-status{display:grid;gap:3px;font-size:11px;line-height:1.5;color:var(--secondary-text-color,#64717b)}
     .alerts{margin:0 22px 14px;display:grid;gap:8px}.alert{display:grid;gap:3px;padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.5;background:color-mix(in srgb,var(--warning-color,#b8860b) 14%,transparent);border-left:3px solid var(--warning-color,#b8860b)}.alert strong{font-size:11px;letter-spacing:.3px}.alert.more{border-left:0;background:none;padding:0 2px;color:var(--secondary-text-color,#64717b)}.planner-form .alerts{margin:12px 0 0}
     :host([data-appearance=native]) .alerts,:host([data-appearance=minimal]) .alerts{margin-left:16px;margin-right:16px}:host([data-appearance=native]) .planner-form .alerts{margin-left:0;margin-right:0}
     .last-train{display:inline-block;margin-top:5px;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:.5px;background:color-mix(in srgb,var(--warning-color,#b8860b) 22%,transparent)}
@@ -538,6 +576,14 @@ const appearanceChoices = (current) =>
             " min to change platforms. Estimates are not guaranteed; delays can change them.",
         ),
       );
+      if (this._transferData?.timetable_pending)
+        section.append(
+          element(
+            "p",
+            "transfer-note timetable-pending",
+            "Timetable loading. Live departures are shown now; schedule estimates will be added on refresh.",
+          ),
+        );
       if (connections.origin) {
         section.append(
           element(
@@ -1099,6 +1145,8 @@ const appearanceChoices = (current) =>
         const alerts = alertList(
           Array.isArray(attrs.alerts) ? attrs.alerts.filter(pinned) : [],
           attrs.outages,
+          attrs.alerts_status,
+          attrs.outages_status,
         );
         if (alerts) card.append(alerts);
       }
@@ -1976,8 +2024,9 @@ const appearanceChoices = (current) =>
           throw new Error("Invalid route");
         this._result = result;
         this._showResult(result);
-        this._status.textContent =
-          "Live predictions refresh every 30 seconds while this card is open.";
+        this._status.textContent = result.timetable_pending
+          ? "Live predictions shown. Timetable loading; schedule estimates will be added on refresh."
+          : "Live predictions refresh every 30 seconds while this card is open.";
       } catch {
         if (this.isConnected && generation === this._generation) {
           this._result = null;
@@ -2164,7 +2213,11 @@ const appearanceChoices = (current) =>
       );
       const changes = selected.option.route.legs.length - 1;
       // Alerts for the lines on the route being shown, not every route.
-      const alerts = alertList(selected.option.alerts);
+      const alerts = alertList(
+        selected.option.alerts,
+        null,
+        selected.option.alerts_status,
+      );
       this._alertHost.replaceChildren(...(alerts ? [alerts] : []));
       this._scheduled.textContent = Number.isFinite(
         selected.option.scheduled_ride_minutes,

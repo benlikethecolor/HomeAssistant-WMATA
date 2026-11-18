@@ -61,9 +61,12 @@ class CommuteTest(unittest.IsolatedAsyncioTestCase):
             stations=AsyncMock(return_value=[]),
             trains=AsyncMock(return_value=TRAINS),
             rail_times=AsyncMock(return_value=RIDE_TIMES),
+            rail_schedule_pending=False,
+            rail_schedule_nowait=MagicMock(return_value=None),
             rail_schedule=AsyncMock(side_effect=APIConnectionError("No timetable")),
             rail_schedule_ready=lambda: True,
             rail_alerts=AsyncMock(return_value=[]),
+            alert_status=MagicMock(return_value=None),
         )
 
     async def asyncTearDown(self):
@@ -138,7 +141,7 @@ class CommuteTest(unittest.IsolatedAsyncioTestCase):
         self.api.rail_schedule.reset_mock(side_effect=True)
         self.api.rail_schedule.return_value = None
         await self.coordinator._async_update_data()
-        self.api.rail_schedule.assert_awaited()
+        self.api.rail_schedule_nowait.assert_called()
 
     async def test_a_failed_timetable_download_does_not_cause_a_refresh_loop(self):
         self.api.rail_schedule_ready = lambda: False

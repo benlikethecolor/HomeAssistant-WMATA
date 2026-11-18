@@ -69,7 +69,15 @@ class WmataBoardSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_device_class = SensorDeviceClass.DURATION
     _unrecorded_attributes = frozenset(
-        {"arrivals", "updated_at", "next_arrival", "alerts", "outages"}
+        {
+            "arrivals",
+            "updated_at",
+            "next_arrival",
+            "alerts",
+            "outages",
+            "alerts_status",
+            "outages_status",
+        }
     )
 
     def __init__(self, coordinator) -> None:
@@ -125,6 +133,12 @@ class WmataBoardSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
             "served_lines": self.coordinator.served_lines,
             "next_arrival": arrivals[0] if arrivals else None,
             "alerts": self.alerts,
+            "alerts_status": self.coordinator.data.alerts_status
+            if self.coordinator.data
+            else None,
+            "outages_status": self.coordinator.data.outages_status
+            if self.coordinator.data
+            else None,
             "outages": self.coordinator.data.outages if self.coordinator.data else [],
             "updated_at": self.coordinator.data.updated_at
             if self.coordinator.data
@@ -229,7 +243,9 @@ class WmataCommuteSensor(CoordinatorEntity, SensorEntity):
     """Estimated trip between two stations, usable in automations."""
 
     _attr_has_entity_name = True
-    _unrecorded_attributes = frozenset({"updated_at", "first_train", "alerts"})
+    _unrecorded_attributes = frozenset(
+        {"updated_at", "first_train", "alerts", "alerts_status"}
+    )
 
     def __init__(self, coordinator, direction, kind) -> None:
         super().__init__(coordinator)
@@ -314,6 +330,7 @@ class WmataCommuteSensor(CoordinatorEntity, SensorEntity):
             "schedule_estimate": trip.get("schedule_estimate"),
             "last_train": bool(train.get("last_train")),
             "alerts": trip.get("alerts", []),
+            "alerts_status": (self.coordinator.data or {}).get("alerts_status"),
             "transfer_buffer": self.coordinator.buffer,
             "updated_at": self.coordinator.data["updated_at"]
             if self.coordinator.data

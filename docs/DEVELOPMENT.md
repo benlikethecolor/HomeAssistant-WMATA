@@ -82,7 +82,7 @@ Live predictions only cover the next few trains on each line. Within that window
 
 `schedules.py` reads the feed with service days in America/New_York. It handles calendar additions and removals, the stop IDs for each platform of a transfer station, pickup and drop-off restrictions, and service times after midnight (a 25:10 departure belongs to the previous service day). Trips defined only by a frequency are skipped, because they aren't real departure times. Nothing is estimated outside the feed's validity dates. If service has ended for the day or the feed has expired, the time stays unknown.
 
-The feed is downloaded at most once every six hours per API key, and again when the service day rolls over. It's parsed in the executor, size-limited, and backed off for five minutes after a failure.
+The feed is downloaded at most once every six hours per API key, and again when the service day rolls over. It's parsed in the executor, size-limited, and backed off for five minutes after a failure. Planner and journey requests read a ready timetable from cache. If it is missing, `rail_schedule_nowait` starts one background task shared by the API key and returns immediately. Cards show live predictions and `timetable_pending` while it loads; their next 30-second refresh adds schedule departures. Commute coordinators also load timetables in the background and refresh once ready.
 
 ### The trip planner card
 
@@ -104,9 +104,11 @@ The sensors always follow the route with the earliest estimated arrival. There i
 
 ### Service alerts
 
-`alerts.py` turns WMATA's three incident feeds (rail, bus, and elevator and escalator outages) into small dictionaries. They are advisory, so the API methods for them never raise. A failed request keeps the last known alerts and tries again in a minute, and a key without access to the feeds gets an empty list instead of a re-authentication prompt.
+`alerts.py` turns WMATA's three incident feeds (rail, bus, and elevator and escalator outages) into small dictionaries. They are advisory, so the API methods for them never raise. A failed request keeps the last known alerts and tries again in a minute. A key without access to the feeds backs off for 15 minutes without triggering re-authentication for the arrival board. Each feed tracks its last successful check in `updated_at` and marks a failed attempt as `stale`. Failed requests never advance that timestamp. A successful empty response clears the previous alerts and the stale flag. Status is shared by API key, separately for rail incidents, bus incidents, and elevator/escalator outages.
 
-Each feed is cached per API key, a minute for incidents and five for outages, so the number of requests doesn't grow with the number of stations. Rail incidents are matched by line. A station shows the ones for the lines that serve it, and a station-to-station journey or commute shows the ones for every line on its route, including lines it transfers to. Bus incidents are matched by route, using the routes that have been seen at the stop since startup.
+Each feed is cached per API key, a minute for incidents and five for outages, so the number of requests doesn't grow with the number of stations. Rail incidents are matched by line. A station shows the ones for the lines that serve it, and a station-to-station journey or commute shows the ones for every line on its route, including lines it transfers to. Bus incidents are matched against both the stop metadata's served routes and routes observed in live predictions. This includes suspended routes with no predictions at startup.
+
+Arrival and journey sensors expose `alerts_status` and `outages_status`; commute travel-time sensors and planner alternatives expose `alerts_status`. Cards show the last successful check and label retained alerts as last known when stale, including a warning if an empty feed has never succeeded. Service alert and elevator problem sensors become unavailable while their own feed is stale; arrival availability is unaffected. These freshness attributes are excluded from recorder history.
 
 "Last train" comes from the prediction feed, which labels the final train. Nothing is worked out from the timetable.
 
