@@ -58,6 +58,26 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     active = {sensor.unique_id for sensor in sensors}
     registry = er.async_get(hass)
     for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        # Keep withdrawn line sensors across reloads so user entity IDs survive.
+        prefix = f"wmata_train_{coordinator.location.lower()}_journey_line_"
+        if (
+            coordinator.service_type == "train"
+            and entity.platform == DOMAIN
+            and entity.domain == "sensor"
+            and entity.unique_id.startswith(prefix)
+            and entity.unique_id not in active
+        ):
+            parts = entity.unique_id[len(prefix) :].split("_")
+            if (
+                len(parts) == 2
+                and parts[0] in LINE_NAME_MAP
+                and parts[1] in ("eastbound", "westbound", "northbound", "southbound")
+            ):
+                sensor = WmataDirectionSensor(
+                    coordinator, parts[0], parts[1].capitalize()
+                )
+                sensors.append(sensor)
+                active.add(sensor.unique_id)
         if (
             entity.platform == DOMAIN
             and entity.domain == "sensor"

@@ -241,6 +241,45 @@ class ReliabilityTest(unittest.IsolatedAsyncioTestCase):
         finally:
             await hass.async_stop(force=True)
 
+    async def test_withdrawn_line_entity_identity_survives_an_entry_reload(self):
+        hass = HomeAssistant("/tmp/wmata-withdrawn-line")
+        test = wmata_tests.IntegrationTest()
+        test.hass = hass
+        try:
+            with patch(
+                "custom_components.wmata.coordinator.async_get_clientsession",
+                return_value=MagicMock(),
+            ):
+                c = test.coordinator()
+            c.served_lines = ["RD"]
+            e = entry()
+            e.runtime_data = c
+            retired = SimpleNamespace(
+                platform="wmata",
+                domain="sensor",
+                unique_id="wmata_train_a01_journey_line_OR_eastbound",
+                entity_id="sensor.my_orange_arrival",
+            )
+            add = MagicMock()
+            registry = MagicMock()
+            with (
+                patch(
+                    "custom_components.wmata.sensor.er.async_get", return_value=registry
+                ),
+                patch(
+                    "custom_components.wmata.sensor.er.async_entries_for_config_entry",
+                    return_value=[retired],
+                ),
+            ):
+                await async_setup_entry(hass, e, add)
+            sensor = next(
+                s for s in add.call_args.args[0] if s.unique_id == retired.unique_id
+            )
+            self.assertFalse(sensor.available)
+            registry.async_remove.assert_not_called()
+        finally:
+            await hass.async_stop(force=True)
+
     async def test_72_hours_of_incident_outages_preserve_last_success_then_recover(
         self,
     ):
