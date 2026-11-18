@@ -35,6 +35,9 @@ class ReleaseTest(unittest.TestCase):
             result = self.prepare(f"v{version}", folder)
             self.assertEqual(result.returncode, 0, result.stderr)
             metadata = json.loads(result.stdout)
+            self.assertEqual(
+                metadata["prerelease"], "true" if "-" in version else "false"
+            )
             with zipfile.ZipFile(metadata["archive"]) as archive:
                 self.assertIsNone(archive.testzip())
                 self.assertIn(

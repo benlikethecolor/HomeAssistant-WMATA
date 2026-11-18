@@ -1,0 +1,5 @@
+[
+  {"release": "v1.1.0", "version": 1, "data": {"api_key": "fixture", "id": "A01"}, "options": {}},
+  {"release": "v2.2.0", "version": 1, "data": {"api_key": "fixture", "id": "1001195", "service_type": "bus"}, "options": {}},
+  {"release": "v3.0.2", "version": 3, "data": {"api_key": "fixture", "id": "A01", "service_type": "train"}, "options": {"scan_interval": 45, "journeys": [{"id": "saved", "name": "Orange", "lines": ["OR"]}]}}
+]

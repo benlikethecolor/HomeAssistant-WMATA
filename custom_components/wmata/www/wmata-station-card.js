@@ -1672,6 +1672,12 @@ const appearanceChoices = (current) =>
       this._pending = null;
       this._query = null;
       this._config = { appearance: "native", transfer_buffer: 3, ...config };
+      if (
+        !["standard", "warn", "avoid"].includes(
+          this._config.accessibility || "warn",
+        )
+      )
+        throw new Error("Choose a supported accessibility preference.");
       this.dataset.appearance = this._config.appearance;
       this.dataset.day = String(
         this._hass?.states?.["sun.sun"]?.state === "above_horizon",
@@ -1817,9 +1823,9 @@ const appearanceChoices = (current) =>
         :host{display:block;color:var(--primary-text-color,#202b35);font-family:var(--ha-font-family-body,Roboto,system-ui,sans-serif)}
         ha-card{display:block;border:var(--ha-card-border-width,1px) solid var(--divider-color,#ddd);border-radius:var(--ha-card-border-radius,24px);background:var(--ha-card-background,var(--card-background-color,#fff));box-shadow:var(--ha-card-box-shadow,none)}
         .comparison-summary{font-size:14px;line-height:1.6;margin:12px 0 6px}.comparison-note{font-size:12px;line-height:1.5;color:var(--secondary-text-color)}.route-comparison{margin-top:12px}.route-comparison summary{cursor:pointer;font-size:13px;padding:8px 0}.route-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}.route-choice{text-align:left;display:flex;flex-direction:column;gap:6px}.route-choice strong{font-size:12px}.route-choice span,.route-choice small{font-size:11px;line-height:1.5}.route-choice[aria-pressed=true]{border-color:var(--primary-color,#0076be);background:color-mix(in srgb,var(--primary-color,#0076be) 10%,transparent)}
-        .planner-form{padding:16px}.planner-title{font-size:20px;font-weight:400;margin:0 0 12px}.fields{display:flex;gap:12px;flex-wrap:wrap}label{flex:1;min-width:150px;font-size:12px;line-height:1.8;color:var(--secondary-text-color,#64717b)}input{box-sizing:border-box;width:100%;font:inherit;font-size:14px;padding:11px 10px;border:1px solid var(--divider-color,#ccc);border-radius:8px;background:var(--secondary-background-color,#f4f6f7);color:var(--primary-text-color,#222)}
-        .commute-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.commute-route{flex:1;min-width:160px;font-size:15px;line-height:1.5}.reverse[aria-pressed=true]{border-color:var(--primary-color,#0076be)}.search[hidden]{display:none}.commute-bar+.search{margin-top:12px}
-        .actions{display:flex;gap:8px;margin-top:12px}button{font:inherit;font-size:13px;border:1px solid var(--divider-color,#ccc);border-radius:9px;padding:9px 14px;background:transparent;color:inherit;cursor:pointer}button[type=submit]{background:var(--primary-color,#0076be);color:var(--text-primary-color,#fff);border-color:transparent}button:focus-visible,input:focus-visible{outline:2px solid var(--primary-color,#0076be);outline-offset:2px}.status,.scheduled{font-size:12px;line-height:1.6;margin-top:12px;color:var(--secondary-text-color,#64717b)}.result{margin-top:12px}.result:empty{display:none}
+        .planner-form{padding:16px}.planner-title{font-size:20px;font-weight:400;margin:0 0 12px}.fields{display:flex;gap:12px;flex-wrap:wrap}label{flex:1;min-width:150px;font-size:12px;line-height:1.8;color:var(--secondary-text-color,#64717b)}input,select{box-sizing:border-box;width:100%;font:inherit;font-size:14px;padding:11px 10px;border:1px solid var(--divider-color,#ccc);border-radius:8px;background:var(--secondary-background-color,#f4f6f7);color:var(--primary-text-color,#222)}
+        .commute-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.commute-route{flex:1;min-width:160px;font-size:15px;line-height:1.5}.reverse[aria-pressed=true]{border-color:var(--primary-color,#0076be)}.search[hidden],label[hidden]{display:none}.trip-options{margin-top:12px}.trip-options summary,.scheduled-trip summary{cursor:pointer;font-size:13px;padding:8px 0}.scheduled-trip{border-top:1px solid var(--divider-color,#ddd);padding:8px 0}.commute-bar+.search{margin-top:12px}
+        .actions{display:flex;gap:8px;margin-top:12px}button{font:inherit;font-size:13px;border:1px solid var(--divider-color,#ccc);border-radius:9px;padding:9px 14px;background:transparent;color:inherit;cursor:pointer}button[type=submit]{background:var(--primary-color,#0076be);color:var(--text-primary-color,#fff);border-color:transparent}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--primary-color,#0076be);outline-offset:2px}.status,.scheduled{font-size:12px;line-height:1.6;margin-top:12px;color:var(--secondary-text-color,#64717b)}.result{margin-top:12px}.result:empty{display:none}
       </style>`;
       const card = element("ha-card");
       const form = element("form", "planner-form");
@@ -1882,17 +1888,82 @@ const appearanceChoices = (current) =>
       swap.onclick = () => this._swap();
       actions.append(submit, swap);
       this._search.append(fields, actions);
+      const options = element("details", "trip-options");
+      options.append(element("summary", null, "Time and accessibility"));
+      const optionFields = element("div", "fields");
+      const modeLabel = element("label", null, "When");
+      this._timeMode = element("select");
+      for (const [value, label] of [
+        ["now", "Leave now"],
+        ["depart_at", "Depart at"],
+        ["arrive_by", "Arrive by"],
+      ]) {
+        const option = element("option", null, label);
+        option.value = value;
+        this._timeMode.append(option);
+      }
+      modeLabel.append(this._timeMode);
+      this._whenLabel = element(
+        "label",
+        null,
+        "Date and time (your browser's timezone)",
+      );
+      this._whenInput = element("input");
+      this._whenInput.type = "datetime-local";
+      const local = new Date(Date.now() + 10 * 60000);
+      this._whenInput.value = new Date(
+        local.getTime() - local.getTimezoneOffset() * 60000,
+      )
+        .toISOString()
+        .slice(0, 16);
+      this._whenLabel.append(this._whenInput);
+      this._whenLabel.hidden = true;
+      const accessLabel = element("label", null, "Elevator information");
+      this._accessibility = element("select");
+      for (const [value, label] of [
+        ["standard", "Do not check"],
+        ["warn", "Show outage warnings"],
+        ["avoid", "Avoid stations with reported elevator outages"],
+      ]) {
+        const option = element("option", null, label);
+        option.value = value;
+        this._accessibility.append(option);
+      }
+      this._accessibility.value = this._config.accessibility || "warn";
+      accessLabel.append(this._accessibility);
+      optionFields.append(modeLabel, this._whenLabel, accessLabel);
+      options.append(
+        optionFields,
+        element(
+          "p",
+          "accessibility-note",
+          "Outage information cannot certify a complete step-free route or predict future elevator availability. Allow extra transfer time if you need elevators.",
+        ),
+      );
+      for (const input of [
+        this._timeMode,
+        this._whenInput,
+        this._accessibility,
+      ])
+        input.onchange = () => {
+          this._whenLabel.hidden = this._timeMode.value === "now";
+          this._invalidate();
+          this._plan();
+        };
       this._status = element("div", "status", "Loading station names…");
       this._status.setAttribute("role", "status");
       this._scheduled = element("div", "scheduled");
       this._alertHost = element("div", "planner-alerts");
+      this._accessHost = element("div", "accessibility-status");
       this._routeOptions = element("section", "route-options");
       this._routeOptions.setAttribute("aria-label", "Route comparison");
       form.append(
         this._search,
+        options,
         this._list,
         this._status,
         this._alertHost,
+        this._accessHost,
         this._scheduled,
         this._routeOptions,
       );
@@ -1918,6 +1989,7 @@ const appearanceChoices = (current) =>
       this._board = null;
       this._scheduled.textContent = "";
       this._alertHost.replaceChildren();
+      this._accessHost.replaceChildren();
       this._routeOptions.replaceChildren();
       this._chosenRouteId = null;
       this._activeRouteId = null;
@@ -1999,6 +2071,20 @@ const appearanceChoices = (current) =>
       this._destinationInput.value = to.name;
       this._updateCommuteBar();
       this._query = { origin: from.code, destination: to.code };
+      if (this._accessibility.value !== "warn")
+        this._query.accessibility = this._accessibility.value;
+      if (this._timeMode.value !== "now") {
+        const when = new Date(this._whenInput.value);
+        if (!Number.isFinite(when.getTime())) {
+          this._status.textContent = "Choose a valid date and time.";
+          return;
+        }
+        Object.assign(this._query, {
+          mode: this._timeMode.value,
+          when: when.toISOString(),
+          transfer_buffer: this._config.transfer_buffer,
+        });
+      }
       await this._refresh();
     }
     async _refresh() {
@@ -2020,18 +2106,28 @@ const appearanceChoices = (current) =>
           ...this._query,
         });
         if (!this.isConnected || generation !== this._generation) return;
-        if (!result.route?.legs?.length || !Array.isArray(result.legs))
+        if (
+          !result.planning &&
+          (!result.route?.legs?.length || !Array.isArray(result.legs))
+        )
           throw new Error("Invalid route");
         this._result = result;
         this._showResult(result);
-        this._status.textContent = result.timetable_pending
-          ? "Live predictions shown. Timetable loading; schedule estimates will be added on refresh."
-          : "Live predictions refresh every 30 seconds while this card is open.";
-      } catch {
+        if (!result.planning)
+          this._status.textContent = result.timetable_pending
+            ? "Live predictions shown. Timetable loading; schedule estimates will be added on refresh."
+            : "Live predictions refresh every 30 seconds while this card is open.";
+      } catch (error) {
         if (this.isConnected && generation === this._generation) {
           this._result = null;
           this._status.textContent =
-            "Trip predictions unavailable. Retrying shortly.";
+            {
+              accessibility_unavailable:
+                "Elevator status is unavailable. Choose warnings only or try again.",
+              no_accessible_route:
+                "Every candidate route uses a station with a reported elevator outage. Try warnings only.",
+              invalid_time: "Choose a future time within the next seven days.",
+            }[error?.code] || "Trip predictions unavailable. Retrying shortly.";
           this._routeOptions.replaceChildren();
           if (this._board) {
             this._board._transferError = true;
@@ -2174,13 +2270,105 @@ const appearanceChoices = (current) =>
       details.append(grid);
       this._routeOptions.append(details);
     }
+    _showScheduled(result) {
+      this._resultHost.replaceChildren();
+      this._board = null;
+      this._routeOptions.replaceChildren();
+      this._alertHost.replaceChildren();
+      const plan = result.planning;
+      this._showAccessibility(result.accessibility);
+      this._status.textContent = plan.pending
+        ? "Timetable loading. This plan will refresh automatically."
+        : plan.journeys.length
+          ? "Schedule estimates only — live predictions are not used for a future trip."
+          : "No scheduled trip was found in the six-hour search window or the published feed does not cover that date.";
+      this._scheduled.textContent =
+        "Times include transfer waits and your platform-change allowance.";
+      const clock = (value) =>
+        new Date(value).toLocaleString([], {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+      for (const [index, journey] of plan.journeys.entries()) {
+        const details = element("details", "scheduled-trip");
+        details.open = index === 0;
+        details.append(
+          element(
+            "summary",
+            null,
+            `${index === 0 ? (plan.mode === "arrive_by" ? "Latest departure" : "Earliest arrival") + " · " : ""}${clock(journey.departure_at)} → ${clock(journey.arrival_at)} · ${Math.ceil(journey.trip_minutes)} min · ${journey.transfers} transfers`,
+          ),
+        );
+        details.append(element("p", "status", journey.route_description));
+        const itinerary = element("ol", "trip-itinerary");
+        for (const leg of journey.legs) {
+          const item = element("li");
+          item.append(
+            element(
+              "strong",
+              null,
+              `${leg.line_name} · ${leg.from_name} → ${leg.to_name}`,
+            ),
+            element(
+              "div",
+              null,
+              `${clock(leg.departure_at)} → ${clock(leg.arrival_at)} · ${Math.ceil(leg.ride_minutes)} min riding${leg.wait_minutes ? " · " + Math.ceil(leg.wait_minutes) + " min changing platforms and waiting" : ""}`,
+            ),
+          );
+          itinerary.append(item);
+        }
+        details.append(itinerary);
+        this._routeOptions.append(details);
+      }
+    }
+    _showAccessibility(info, route) {
+      this._accessHost.replaceChildren();
+      if (!info || info.preference === "standard") return;
+      const stations = route
+        ? new Set(route.legs.flatMap((leg) => [leg.from_name, leg.to_name]))
+        : null;
+      const warnings = (info.warnings || []).filter(
+        (unit) => !stations || stations.has(unit.station_name),
+      );
+      if (info.status?.stale || !info.status)
+        this._accessHost.append(
+          element(
+            "p",
+            "alert",
+            "Elevator status is unavailable or stale. An accessible route cannot be confirmed.",
+          ),
+        );
+      for (const unit of warnings)
+        this._accessHost.append(
+          element(
+            "p",
+            "alert",
+            `${unit.station_name}: ${unit.location || "Elevator outage reported"}. ${unit.reason || ""}`,
+          ),
+        );
+      if (info.preference === "avoid")
+        this._accessHost.append(
+          element(
+            "p",
+            "status",
+            "Stations with reported elevator outages are excluded. This is not a guarantee of a step-free route.",
+          ),
+        );
+    }
     _showResult(result) {
+      if (result.planning) {
+        this._showScheduled(result);
+        return;
+      }
       const comparison = this._comparison(result);
       const selected =
         comparison.choices.find((value) => value.id === this._chosenRouteId) ||
         comparison.fastest ||
         comparison.choices[0];
       if (!selected) return;
+      this._showAccessibility(result.accessibility, selected.option.route);
       if (
         this._chosenRouteId &&
         !comparison.choices.some((value) => value.id === this._chosenRouteId)
@@ -2230,6 +2418,12 @@ const appearanceChoices = (current) =>
   class WmataTripPlannerEditor extends HTMLElement {
     setConfig(config) {
       this._config = { appearance: "native", transfer_buffer: 3, ...config };
+      if (
+        !["standard", "warn", "avoid"].includes(
+          this._config.accessibility || "warn",
+        )
+      )
+        throw new Error("Choose a supported accessibility preference.");
       this._render();
     }
     set hass(hass) {
@@ -2294,6 +2488,22 @@ const appearanceChoices = (current) =>
                 (this._config || this.config).appearance,
               ),
               mode: "dropdown",
+            },
+          },
+        },
+        {
+          name: "accessibility",
+          selector: {
+            select: {
+              mode: "dropdown",
+              options: [
+                { value: "standard", label: "Do not check elevators" },
+                { value: "warn", label: "Show elevator outage warnings" },
+                {
+                  value: "avoid",
+                  label: "Avoid stations with reported elevator outages",
+                },
+              ],
             },
           },
         },

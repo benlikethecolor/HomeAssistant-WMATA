@@ -20,6 +20,8 @@ REQUIRED = {
     "alerts.py",
     "commute.py",
     "estimates.py",
+    "health.py",
+    "planning.py",
     "schedules.py",
     "geo_shapes.json",
     "route_shapes.json",

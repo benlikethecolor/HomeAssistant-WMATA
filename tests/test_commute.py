@@ -170,15 +170,17 @@ class CommuteTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ConfigEntryAuthFailed):
             await self.coordinator._async_update_data()
 
-    async def test_setup_creates_six_sensors_and_no_board_entities(self):
+    async def test_setup_creates_six_travel_sensors_and_optional_health(self):
         e = commute_entry()
         e.runtime_data = self.coordinator
         add = MagicMock()
         await setup_sensors(self.hass, e, add)
         sensors = list(add.call_args.args[0])
-        self.assertEqual(len(sensors), 6)
-        self.assertEqual(len({s.unique_id for s in sensors}), 6)
-        self.assertTrue(all(isinstance(s, WmataCommuteSensor) for s in sensors))
+        self.assertEqual(len(sensors), 7)
+        self.assertEqual(len({s.unique_id for s in sensors}), 7)
+        self.assertTrue(all(isinstance(s, WmataCommuteSensor) for s in sensors[:6]))
+        self.assertFalse(sensors[-1].entity_registry_enabled_default)
+        self.assertEqual(sensors[-1].name, "Health")
 
 
 class CommuteFlowTest(unittest.IsolatedAsyncioTestCase):

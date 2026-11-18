@@ -40,7 +40,7 @@ def service_anchor(day):
 
 
 class RailSchedule:
-    """Keep only services near today, indexed by boarding station."""
+    """Keep services for the week ahead, indexed by boarding station."""
 
     def __init__(self, content, now=None):
         self.day = (now or datetime.now(UTC)).astimezone(ZONE).date()
@@ -78,7 +78,7 @@ class RailSchedule:
                 if info.get("feed_end_date")
                 else date.max
             )
-            self.days = [self.day + timedelta(days=offset) for offset in (-1, 0, 1)]
+            self.days = [self.day + timedelta(days=offset) for offset in range(-1, 9)]
             active = {day: set() for day in self.days}
             for row in rows("calendar.txt"):
                 for day in self.days:
@@ -164,7 +164,7 @@ class RailSchedule:
             if not self.boarding:
                 raise ValueError("No supported scheduled rail trips")
 
-    def departures(self, leg, now=None):
+    def departures(self, leg, now=None, limit=120):
         """Return only trains that actually reach the leg's goal, within six hours."""
         now = now or datetime.now(UTC)
         timestamp = now.timestamp()
@@ -210,4 +210,4 @@ class RailSchedule:
                     }
                 )
         result.sort(key=lambda row: row["departure_at"])
-        return result[:120]
+        return result[:limit] if limit is not None else result

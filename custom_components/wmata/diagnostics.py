@@ -8,6 +8,7 @@ from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import HomeAssistant
 
 from .const import CARD_VERSION, CONF_JOURNEYS, LINE_NAME_MAP
+from .health import health_snapshot
 
 
 async def async_get_config_entry_diagnostics(
@@ -29,6 +30,7 @@ async def async_get_config_entry_diagnostics(
     }
     if coordinator is None:
         return result
+    result["health"] = health_snapshot(coordinator)
     interval = coordinator.update_interval
     result["poll_interval_seconds"] = interval.total_seconds() if interval else None
     result["last_update_success"] = coordinator.last_update_success
