@@ -122,7 +122,10 @@ async def journey_arrivals(hass, connection, msg):
         return
 
     legs = await route_predictions(hass, coordinator.api, route, coordinator)
-    connection.send_result(msg["id"], {"legs": legs})
+    connection.send_result(
+        msg["id"],
+        {"legs": legs, "timetable_pending": coordinator.api.rail_schedule_pending},
+    )
 
 
 async def route_predictions(
@@ -130,8 +133,8 @@ async def route_predictions(
 ):
     """Share filtering and prediction caches between saved and temporary routes.
 
-    Pass timetable=False to answer from live predictions alone, without waiting
-    for the rail timetable to download.
+    Timetables are read from cache and downloaded in the background. Pass
+    timetable=False to use live predictions alone without starting a download.
     """
 
     async def predictions(index, leg):
@@ -182,10 +185,7 @@ async def route_predictions(
         times = None
     for result, leg in zip(legs, route["legs"], strict=True):
         result["ride_minutes"] = ride_minutes(leg, times)
-    try:
-        schedule = await api.rail_schedule() if timetable else None
-    except (APIAuthError, APIConnectionError):
-        schedule = None
+    schedule = api.rail_schedule_nowait() if timetable else None
     now = datetime.now(UTC)
     if schedule:
         scheduled = await hass.async_add_executor_job(
@@ -313,6 +313,8 @@ async def trip_alternatives(hass, api, routes, station_data=None, timetable=True
                 ),
                 "route": route,
                 "route_description": describe_route(route),
+                "alerts_status": api.alert_status("rail"),
+                "timetable_pending": api.rail_schedule_pending,
                 "alerts": alerts_for(
                     alerts,
                     {line for leg in route["legs"] for line in leg["lines"]},

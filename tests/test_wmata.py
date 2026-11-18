@@ -135,6 +135,7 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
             buses=AsyncMock(return_value=[]),
             stop_info=AsyncMock(return_value={"Name": "Test stop", "Routes": []}),
             rail_alerts=AsyncMock(return_value=[]),
+            alert_status=MagicMock(return_value=None),
             bus_alerts=AsyncMock(return_value=[]),
             unit_outages=AsyncMock(return_value=[]),
         )

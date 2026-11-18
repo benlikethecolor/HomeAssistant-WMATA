@@ -47,9 +47,11 @@ class RequestState:
     schedule_expiry: float = 0
     schedule_date: str = ""
     schedule_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    schedule_task: asyncio.Task | None = None
     # kind -> (expires, rows); alerts are shared by every entry on the key.
     alerts: dict[str, tuple[float, list]] = field(default_factory=dict)
     alerts_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    alert_checks: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 class WmataApi:
@@ -228,6 +230,44 @@ class WmataApi:
             and asyncio.get_running_loop().time() < self._state.schedule_expiry
         )
 
+    @property
+    def rail_schedule_pending(self) -> bool:
+        """A timetable download is already running for this API key."""
+        task = self._state.schedule_task
+        return self._state.schedule_lock.locked() or (
+            task is not None and not task.done()
+        )
+
+    def rail_schedule_nowait(self):
+        """Return a cached timetable and load a missing one in the background."""
+        if self.rail_schedule_pending:
+            return None
+        if self.rail_schedule_ready():
+            return self._state.schedule
+        day = datetime.now(UTC).astimezone(ZONE).date().isoformat()
+        # rail_schedule records a five-minute retry delay even on failure.
+        if (
+            self._state.schedule_date == day
+            and asyncio.get_running_loop().time() < self._state.schedule_expiry
+        ):
+            return None
+        if self._hass is not None:
+            self._state.schedule_task = self._hass.async_create_background_task(
+                self._load_schedule_background(), "wmata rail timetable cache"
+            )
+        else:
+            self._state.schedule_task = asyncio.create_task(
+                self._load_schedule_background()
+            )
+        return None
+
+    async def _load_schedule_background(self):
+        try:
+            await self.rail_schedule()
+        except (APIAuthError, APIConnectionError):
+            # Live predictions remain usable; the next request honours backoff.
+            pass
+
     async def rail_schedule(self):
         """Cache official schedules per subscription; parsing never blocks HA."""
         async with self._state.schedule_lock:
@@ -258,6 +298,12 @@ class WmataApi:
             self._state.schedule_expiry = now + 21600
             return schedule
 
+    def alert_status(self, kind) -> dict[str, Any]:
+        """Last successful check and whether the latest attempt failed."""
+        return dict(
+            self._state.alert_checks.get(kind, {"updated_at": None, "stale": True})
+        )
+
     async def _alerts(self, kind, path, key, parse, ttl) -> list[dict[str, Any]]:
         """Advisory data: never raises, and keeps the last answer on failure."""
         async with self._state.alerts_lock:
@@ -273,12 +319,24 @@ class WmataApi:
                 ]
             except APIConnectionError:
                 # Try again in a minute, showing what was last known.
+                self._state.alert_checks[kind] = {
+                    **self.alert_status(kind),
+                    "stale": True,
+                }
                 self._state.alerts[kind] = (now + 60, rows)
                 return rows
             except APIAuthError:
                 # A key without the Incidents product still gets its arrivals.
-                self._state.alerts[kind] = (now + 900, [])
-                return []
+                self._state.alert_checks[kind] = {
+                    **self.alert_status(kind),
+                    "stale": True,
+                }
+                self._state.alerts[kind] = (now + 900, rows)
+                return rows
+            self._state.alert_checks[kind] = {
+                "updated_at": datetime.now(UTC).isoformat(),
+                "stale": False,
+            }
             self._state.alerts[kind] = (now + ttl, fresh)
             return fresh
 

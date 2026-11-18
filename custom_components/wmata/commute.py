@@ -108,7 +108,11 @@ class CommuteCoordinator(DataUpdateCoordinator):
                             for line in leg["lines"]
                         },
                     )
-            return {"trips": trips, "updated_at": datetime.now(UTC).isoformat()}
+            return {
+                "trips": trips,
+                "alerts_status": self.api.alert_status("rail"),
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
         except APIAuthError as err:
             raise ConfigEntryAuthFailed("WMATA API key is invalid") from err
         except APIConnectionError as err:

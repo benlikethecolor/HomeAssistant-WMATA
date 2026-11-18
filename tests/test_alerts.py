@@ -77,6 +77,36 @@ class ParsingTest(unittest.TestCase):
 
 
 class AlertApiTest(unittest.IsolatedAsyncioTestCase):
+    async def test_shared_freshness_survives_repeated_failures_and_recovers(self):
+        hass = SimpleNamespace(data={})
+        one = WmataApi(MagicMock(), "same", hass=hass)
+        two = WmataApi(MagicMock(), "same", hass=hass)
+        one.get = AsyncMock(return_value={"Incidents": RAIL})
+        known = await one.rail_alerts()
+        checked = one.alert_status("rail")["updated_at"]
+        self.assertIsNotNone(checked)
+        self.assertFalse(two.alert_status("rail")["stale"])
+        for error in (APIConnectionError("offline"), APIAuthError("no access")):
+            one._state.alerts["rail"] = (0, known)
+            one.get.side_effect = error
+            self.assertEqual(await one.rail_alerts(), known)
+            self.assertEqual(
+                two.alert_status("rail"), {"updated_at": checked, "stale": True}
+            )
+            self.assertEqual(await two.rail_alerts(), known)
+        one._state.alerts["rail"] = (0, known)
+        one.get.side_effect = None
+        one.get.return_value = {"Incidents": []}
+        self.assertEqual(await one.rail_alerts(), [])
+        self.assertFalse(two.alert_status("rail")["stale"])
+        self.assertIsNotNone(two.alert_status("rail")["updated_at"])
+
+    async def test_first_feed_failure_is_not_a_verified_all_clear(self):
+        api = WmataApi(MagicMock(), "key")
+        api.get = AsyncMock(side_effect=APIConnectionError("offline"))
+        self.assertEqual(await api.bus_alerts(), [])
+        self.assertEqual(api.alert_status("bus"), {"updated_at": None, "stale": True})
+
     async def test_alerts_are_shared_by_key_and_fetched_once_a_minute(self):
         hass = SimpleNamespace(data={})
         one = WmataApi(MagicMock(), "same", hass=hass)
@@ -134,6 +164,49 @@ class AlertEntityTest(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.patch.stop()
         await self.hass.async_stop(force=True)
+
+    async def test_feed_outages_do_not_make_arrivals_unavailable_or_claim_alerts_are_current(
+        self,
+    ):
+        c = self.fixture.coordinator()
+        statuses = {
+            kind: {"updated_at": "2026-11-18T05:00:00+00:00", "stale": False}
+            for kind in ("rail", "units")
+        }
+        c.api.alert_status.side_effect = lambda kind: dict(statuses[kind])
+        c.api.rail_alerts.return_value = [rail_alert(RAIL[0])]
+        c.api.unit_outages.return_value = [unit_outage(UNITS[0])]
+        c.api.trains.return_value = [
+            {"Line": "RD", "DestinationCode": "B11", "LocationCode": "A01", "Min": "4"}
+        ]
+        c.data = await c._async_update_data()
+        alert, elevator, board = (
+            WmataAlertSensor(c),
+            WmataElevatorSensor(c),
+            WmataBoardSensor(c),
+        )
+        self.assertTrue(alert.available)
+        self.assertTrue(elevator.available)
+        statuses["units"]["stale"] = True
+        c.data = await c._async_update_data()
+        self.assertFalse(elevator.available)
+        self.assertTrue(alert.available)
+        statuses["rail"]["stale"] = True
+        c.data = await c._async_update_data()
+        self.assertFalse(alert.available)
+        self.assertTrue(board.available)
+        self.assertEqual(board.native_value, 4)
+        self.assertTrue(board.extra_state_attributes["alerts_status"]["stale"])
+        self.assertEqual(
+            alert.extra_state_attributes["alerts_status"]["updated_at"],
+            "2026-11-18T05:00:00+00:00",
+        )
+        self.assertTrue(alert.extra_state_attributes["alerts"])
+        statuses["rail"]["stale"] = False
+        c.api.rail_alerts.return_value = []
+        c.data = await c._async_update_data()
+        self.assertTrue(alert.available)
+        self.assertFalse(alert.is_on)
 
     async def test_station_shows_alerts_for_its_lines_and_its_own_elevators(self):
         c = self.fixture.coordinator()
@@ -293,6 +366,15 @@ class AlertEntityTest(unittest.IsolatedAsyncioTestCase):
         )
         sensor = WmataCommuteAlertSensor(coordinator)
         self.assertTrue(sensor.is_on)
+        self.assertTrue(sensor.available)
+        coordinator.data["alerts_status"] = {"updated_at": None, "stale": True}
+        self.assertFalse(sensor.available)
+        self.assertTrue(sensor.extra_state_attributes["alerts_status"]["stale"])
+        coordinator.data["alerts_status"] = {
+            "updated_at": "2026-11-18T05:00:00+00:00",
+            "stale": False,
+        }
+        self.assertTrue(sensor.available)
         self.assertEqual(
             [a["id"] for a in sensor.extra_state_attributes["alerts"]],
             ["RD-1", "GR-1"],

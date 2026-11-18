@@ -155,6 +155,7 @@ The planner looks at routes with up to three transfers and puts the one that get
 
 A few things worth knowing about the times:
 
+- Live results appear before the timetable has finished loading. The card refreshes every 30 seconds and adds schedule estimates when the download is ready.
 - Live predictions are used wherever WMATA has them. They only reach so far ahead, so later connections come from the published timetable and are marked **Schedule estimate**. If the arrival time depends on one of those, it's labeled **Schedule-based arrival**.
 - `transfer_buffer` is how long you want for getting between platforms. Raising it can change which route comes out fastest.
 - Trips start on the platform. Walking to the station isn't counted.
@@ -341,7 +342,9 @@ To go back, restore the backup along with the old integration files.
 
 **The board is empty.** Check that the station is open and that you haven't filtered everything out, on the card or in the journey.
 
-**There are never any alerts.** That usually just means service is normal. Alerts come from WMATA's incident feed, which is part of the default tier. If your key can't read it, arrivals keep working and the alert sensors simply stay off.
+**Alerts say stale or unavailable.** The incident feed could not be refreshed. The cards keep any last known alerts, label them stale, and show the last successful check separately from the arrivals refresh time. If there has never been a successful check, they say so. Arrivals keep working. Service alert and elevator outage sensors read `unavailable` until their feed recovers, rather than reporting an old on/off state as current. If this persists, check that your key has access to the incident feeds.
+
+Alert freshness is also available in the `alerts_status` attribute (`updated_at` and `stale`) on arrival boards, journeys, commute travel-time sensors, and service alert sensors. Elevator freshness is in `outages_status`. The timestamp records a successful feed check, not the time WMATA wrote the incident. A successful empty response clears any old alerts.
 
 **The map background is blank.** Your browser can't reach the tile server. The diagram view works offline.
 

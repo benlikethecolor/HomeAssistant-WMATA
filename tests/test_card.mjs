@@ -2308,3 +2308,66 @@ test("the planner shows alerts for the route on screen only", async (t) => {
   f.planner._originInput.dispatchEvent(new f.window.Event("input"));
   assert.equal(f.plannerRoot.querySelector(".alerts"), null);
 });
+
+test("stale alerts retain last-known messages and show when the feed last succeeded", (t) => {
+  const f = fixture(t);
+  const status = { updated_at: "2026-11-18T05:00:00+00:00", stale: true };
+  withAttributes(f, {
+    alerts: [redDelay],
+    alerts_status: status,
+    outages: [{ type: "elevator", location: "Street elevator" }],
+    outages_status: status,
+  });
+  assert.equal(
+    f.root.querySelectorAll(".feed-status[data-stale=true]").length,
+    2,
+  );
+  assert.match(
+    f.root.querySelector(".alerts").textContent,
+    /Last successfully checked/,
+  );
+  assert.match(f.root.querySelector(".alerts").textContent, /Last known Delay/);
+  assert.match(
+    f.root.querySelector(".alerts").textContent,
+    /Last known elevator outage/,
+  );
+  withAttributes(f, {
+    alerts: [],
+    alerts_status: { ...status, stale: false },
+    outages: [],
+    outages_status: { ...status, stale: false },
+  });
+  assert.equal(f.root.querySelector(".alerts"), null);
+});
+
+test("an unverified empty feed shows unavailable information instead of an all clear", (t) => {
+  const f = fixture(t);
+  withAttributes(f, {
+    alerts: [],
+    alerts_status: { updated_at: null, stale: true },
+  });
+  assert.match(
+    f.root.querySelector(".alerts").textContent,
+    /Service alerts.*Stale.*No successful check yet/,
+  );
+  assert.equal(f.root.querySelectorAll(".arrival").length, 3);
+});
+
+test("the planner shows live results while the timetable is loading and marks stale alerts", async (t) => {
+  const f = await plannerFixture(t, () => ({
+    ...quickTripResponse(),
+    timetable_pending: true,
+    alerts: [redDelay],
+    alerts_status: { updated_at: null, stale: true },
+  }));
+  await planQuickTrip(f);
+  assert.match(
+    f.planner._status.textContent,
+    /Live predictions shown.*Timetable loading/,
+  );
+  assert.match(
+    f.plannerRoot.querySelector(".planner-alerts").textContent,
+    /Stale/,
+  );
+  assert.ok(f.planner._board);
+});

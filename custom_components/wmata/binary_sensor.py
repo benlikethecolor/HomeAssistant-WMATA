@@ -69,13 +69,26 @@ class WmataDueSoonSensor(WmataStationBinarySensor):
         return {"threshold_minutes": self.threshold}
 
 
-class WmataAlertSensor(WmataStationBinarySensor):
+class AdvisoryAvailability:
+    """An old advisory is not a current on/off answer for an automation."""
+
+    @property
+    def available(self):
+        return super().available and not (self.feed_status or {}).get("stale", False)
+
+
+class WmataAlertSensor(AdvisoryAvailability, WmataStationBinarySensor):
     """On while WMATA reports a delay or alert on a line or route that stops here."""
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_name = "Service alert"
-    _unrecorded_attributes = frozenset({"alerts"})
+    _unrecorded_attributes = frozenset({"alerts", "alerts_status"})
     key = "alert"
+
+    @property
+    def feed_status(self):
+        data = self.coordinator.data
+        return data.alerts_status if data else None
 
     @property
     def is_on(self):
@@ -86,6 +99,7 @@ class WmataAlertSensor(WmataStationBinarySensor):
         alerts = self.coordinator.alerts_for()
         return {
             "alerts": alerts,
+            "alerts_status": self.feed_status,
             # Handy in a notification without a template loop.
             "summary": " ".join(alert["description"] for alert in alerts) or None,
         }
@@ -125,15 +139,20 @@ class WmataLastTrainSensor(WmataStationBinarySensor):
         }
 
 
-class WmataElevatorSensor(WmataStationBinarySensor):
+class WmataElevatorSensor(AdvisoryAvailability, WmataStationBinarySensor):
     """On while an elevator at this station is out of service."""
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_entity_registry_enabled_default = False
     _attr_icon = "mdi:elevator-passenger-off-outline"
     _attr_name = "Elevator outage"
-    _unrecorded_attributes = frozenset({"elevators", "escalators"})
+    _unrecorded_attributes = frozenset({"elevators", "escalators", "outages_status"})
     key = "elevator_outage"
+
+    @property
+    def feed_status(self):
+        data = self.coordinator.data
+        return data.outages_status if data else None
 
     def _units(self, kind):
         outages = self.coordinator.data.outages if self.coordinator.data else []
@@ -147,18 +166,21 @@ class WmataElevatorSensor(WmataStationBinarySensor):
     def extra_state_attributes(self):
         # Escalators break often enough that they don't drive the state.
         return {
+            "outages_status": self.feed_status,
             "elevators": self._units("elevator"),
             "escalators": self._units("escalator"),
         }
 
 
-class WmataCommuteAlertSensor(CoordinatorEntity, BinarySensorEntity):
+class WmataCommuteAlertSensor(
+    AdvisoryAvailability, CoordinatorEntity, BinarySensorEntity
+):
     """On while an alert affects a line on the commute, in either direction."""
 
     _attr_has_entity_name = True
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_name = "Service alert"
-    _unrecorded_attributes = frozenset({"alerts"})
+    _unrecorded_attributes = frozenset({"alerts", "alerts_status"})
 
     def __init__(self, coordinator):
         super().__init__(coordinator)
@@ -171,6 +193,10 @@ class WmataCommuteAlertSensor(CoordinatorEntity, BinarySensorEntity):
             manufacturer="WMATA",
             entry_type=DeviceEntryType.SERVICE,
         )
+
+    @property
+    def feed_status(self):
+        return (self.coordinator.data or {}).get("alerts_status")
 
     @property
     def alerts(self):
@@ -190,5 +216,6 @@ class WmataCommuteAlertSensor(CoordinatorEntity, BinarySensorEntity):
         alerts = self.alerts
         return {
             "alerts": alerts,
+            "alerts_status": self.feed_status,
             "summary": " ".join(alert["description"] for alert in alerts) or None,
         }

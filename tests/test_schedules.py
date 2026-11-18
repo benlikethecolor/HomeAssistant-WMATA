@@ -174,6 +174,81 @@ class ScheduleTest(unittest.TestCase):
 
 
 class ScheduleCacheTest(unittest.IsolatedAsyncioTestCase):
+    async def test_background_download_is_shared_and_missing_schedule_never_blocks(
+        self,
+    ):
+        gate = asyncio.Event()
+        started = asyncio.Event()
+
+        async def download():
+            started.set()
+            await gate.wait()
+            return b"fixture"
+
+        async def execute(func, *args):
+            return func(*args)
+
+        hass = SimpleNamespace(
+            data={},
+            async_add_executor_job=execute,
+            async_create_background_task=lambda coro, name: asyncio.create_task(coro),
+        )
+        one = WmataApi(MagicMock(), "key", hass=hass)
+        two = WmataApi(MagicMock(), "key", hass=hass)
+        one._download_rail_schedule = AsyncMock(side_effect=download)
+        two._download_rail_schedule = AsyncMock()
+        parsed = object()
+        with patch("custom_components.wmata.api.RailSchedule", return_value=parsed):
+            self.assertIsNone(one.rail_schedule_nowait())
+            task = one._state.schedule_task
+            try:
+                await asyncio.wait_for(started.wait(), 1)
+                self.assertTrue(two.rail_schedule_pending)
+                self.assertIsNone(two.rail_schedule_nowait())
+                self.assertIs(one._state.schedule_task, two._state.schedule_task)
+            finally:
+                gate.set()
+                await task
+        self.assertFalse(two.rail_schedule_pending)
+        self.assertIs(two.rail_schedule_nowait(), parsed)
+        one._download_rail_schedule.assert_awaited_once()
+        two._download_rail_schedule.assert_not_awaited()
+
+    async def test_a_download_started_by_a_commute_is_also_reported_as_pending(self):
+        api = WmataApi(MagicMock(), "key")
+        gate, started = asyncio.Event(), asyncio.Event()
+
+        async def download():
+            started.set()
+            await gate.wait()
+            raise APIConnectionError("offline")
+
+        api._download_rail_schedule = download
+        task = asyncio.create_task(api._load_schedule_background())
+        try:
+            await asyncio.wait_for(started.wait(), 1)
+            self.assertTrue(api.rail_schedule_pending)
+            self.assertIsNone(api.rail_schedule_nowait())
+            self.assertIsNone(api._state.schedule_task)
+        finally:
+            gate.set()
+            await task
+        self.assertFalse(api.rail_schedule_pending)
+
+    async def test_background_failure_is_consumed_and_obeys_retry_backoff(self):
+        api = WmataApi(MagicMock(), "key")
+        api._download_rail_schedule = AsyncMock(
+            side_effect=APIConnectionError("offline")
+        )
+        self.assertIsNone(api.rail_schedule_nowait())
+        await api._state.schedule_task
+        self.assertIsNone(api.rail_schedule_nowait())
+        api._download_rail_schedule.assert_awaited_once()
+        api._state.schedule_expiry = 0
+        api.rail_schedule_nowait()
+        await api._state.schedule_task
+        self.assertEqual(api._download_rail_schedule.await_count, 2)
+
     async def test_shared_key_singleflight_and_failure_backoff(self):
         async def execute(func, *args):
             return func(*args)

@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from custom_components.wmata.api import APIConnectionError
+from custom_components.wmata.api import APIConnectionError, WmataApi
 from custom_components.wmata.coordinator import APIData
 from custom_components.wmata.journeys import direct_legs, plan_journey
 from custom_components.wmata.station_predictions import async_station_predictions
@@ -19,6 +19,9 @@ def fixture(route=None):
     api = SimpleNamespace(
         _state=object(),
         rail_alerts=AsyncMock(return_value=[]),
+        alert_status=MagicMock(return_value=None),
+        rail_schedule_pending=False,
+        rail_schedule_nowait=MagicMock(return_value=None),
         rail_schedule=AsyncMock(return_value=None),
         rail_times=AsyncMock(
             return_value={("C04", "C03"): 2, ("C03", "C02"): 1, ("C02", "C01"): 1}
@@ -107,12 +110,85 @@ def fixture(route=None):
 
 
 class TransferPredictionsTest(unittest.IsolatedAsyncioTestCase):
+    async def test_journey_and_planner_return_live_results_before_schedule_finishes(
+        self,
+    ):
+        from custom_components.wmata.websocket import plan_trip
+
+        for handler in (journey_arrivals, plan_trip):
+            with self.subTest(handler=handler.__name__):
+                hass, entry, entity, registry, connection, fake = fixture(
+                    plan_journey("C04", "A01")
+                )
+                hass.async_create_background_task = lambda coro, name: (
+                    asyncio.create_task(coro)
+                )
+
+                async def execute(func, *args):
+                    return func(*args)
+
+                hass.async_add_executor_job = execute
+                api = entry.runtime_data.api = WmataApi(
+                    MagicMock(), "fixture-key", hass=hass
+                )
+                api.trains = AsyncMock(return_value=entry.runtime_data.data.next_trains)
+                api.rail_times = fake.rail_times
+                api.rail_alerts = fake.rail_alerts
+                gate = asyncio.Event()
+
+                async def download(gate=gate):
+                    await gate.wait()
+                    return b"fixture"
+
+                api._download_rail_schedule = AsyncMock(side_effect=download)
+                parsed = SimpleNamespace(
+                    departures=lambda leg, now: [
+                        {"ride_minutes": 5, "prediction_source": "schedule"}
+                    ]
+                )
+                message = {
+                    "id": 1,
+                    "entity_id": "sensor.trip",
+                    "origin": "C04",
+                    "destination": "A01",
+                }
+                with (
+                    patch(
+                        "custom_components.wmata.websocket.er.async_get",
+                        return_value=registry,
+                    ),
+                    patch(
+                        "custom_components.wmata.api.RailSchedule", return_value=parsed
+                    ),
+                ):
+                    try:
+                        await asyncio.wait_for(
+                            inspect.unwrap(handler)(hass, connection, message), 1
+                        )
+                        result = connection.send_result.call_args.args[1]
+                        self.assertTrue(result["timetable_pending"])
+                        self.assertTrue(result["legs"][0]["arrivals"])
+                        self.assertEqual(result["legs"][0]["scheduled_departures"], [])
+                    finally:
+                        gate.set()
+                        if api._state.schedule_task:
+                            await api._state.schedule_task
+                    await inspect.unwrap(handler)(hass, connection, message)
+                    result = connection.send_result.call_args.args[1]
+                    self.assertFalse(result["timetable_pending"])
+                    self.assertEqual(
+                        result["legs"][0]["scheduled_departures"][0][
+                            "prediction_source"
+                        ],
+                        "schedule",
+                    )
+
     async def test_timetable_can_supply_rides_when_travel_time_endpoint_is_down(self):
         hass, entry, entity, registry, connection, api = fixture(
             plan_journey("C04", "A01")
         )
         api.rail_times.side_effect = APIConnectionError("offline")
-        api.rail_schedule.return_value = SimpleNamespace(
+        api.rail_schedule_nowait.return_value = SimpleNamespace(
             departures=lambda leg, now: [
                 {"ride_minutes": 5, "prediction_source": "schedule"}
             ]
