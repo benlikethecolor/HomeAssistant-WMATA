@@ -14,7 +14,7 @@ This is a hobby project. It isn't affiliated with or endorsed by WMATA.
 - [HACS](https://hacs.xyz/docs/use/download/download/), unless you'd rather copy the files over yourself
 - A free WMATA API key, which takes a couple of minutes to get
 
-If you're coming from the old numbered sensors (`sensor.wmata_a01_train_1` and so on), read [Upgrading from 2.x](#upgrading-from-2x) before you update. Those entities go away.
+If you're coming from the old numbered sensors (`sensor.wmata_a01_train_1` and so on), read [Upgrading from 1.x or 2.x](#upgrading-from-2x) before you update. Those entities go away.
 
 ## Getting an API key
 
@@ -319,6 +319,8 @@ Choose **Add a custom arrival filter** to save a filter by line, final destinati
 Both kinds can be changed or removed later from the same menu.
 
 ## Upgrading from 2.x
+
+These instructions also apply to original 1.x installations as of 3.0.1. If you already updated from 1.x to 3.0.0 and the entry failed to load, updating to 3.0.1 repairs it automatically.
 
 Version 3 replaces the numbered train and bus sensors with one Arrivals sensor per station or stop. Dashboards and automations that use the old entities will need to be pointed at the new ones.
 

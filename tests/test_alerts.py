@@ -181,6 +181,29 @@ class AlertEntityTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(alert.extra_state_attributes["summary"])
         self.assertFalse(elevator.is_on)
 
+    async def test_bus_alert_without_any_predicted_buses_after_startup(self):
+        c = self.fixture.coordinator(entry("bus", "1001195"))
+        c.api.stop_info.return_value = {
+            "Name": "Test stop",
+            "Routes": ["D36v1", "D36*2", "C10"],
+        }
+        c.api.bus_alerts.return_value = [bus_alert(BUS[0])]
+        c.data = await c._async_update_data()
+        self.assertEqual(c.data.arrivals, [])
+        self.assertEqual(c.routes, {"D36", "C10"})
+        alert = WmataAlertSensor(c)
+        self.assertTrue(alert.is_on)
+        self.assertEqual(
+            alert.extra_state_attributes["alerts"][0]["routes"], ["D34", "D36"]
+        )
+        # No new metadata request or arrival is needed on subsequent polls.
+        c.data = await c._async_update_data()
+        c.api.stop_info.assert_awaited_once_with("1001195")
+        self.assertTrue(alert.is_on)
+        c.api.bus_alerts.return_value = []
+        c.data = await c._async_update_data()
+        self.assertFalse(alert.is_on)
+
     async def test_bus_stop_matches_alerts_to_routes_seen_there(self):
         c = self.fixture.coordinator(entry("bus", "1001195"))
         c.api.bus_alerts.return_value = [bus_alert(BUS[0])]

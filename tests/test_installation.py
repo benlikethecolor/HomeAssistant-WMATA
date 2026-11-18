@@ -13,6 +13,12 @@ class InstallationTest(unittest.TestCase):
     def test_upgrade_from_version_one(self):
         self.verify("upgrade")
 
+    def test_original_1x_upgrade_from_archive(self):
+        self.verify("upgrade_1x")
+
+    def test_repair_original_1x_entry_already_upgraded_by_300(self):
+        self.verify("repair_300")
+
     def verify(self, scenario):
         root = Path(__file__).resolve().parents[1]
         result = subprocess.run(

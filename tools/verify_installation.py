@@ -401,16 +401,23 @@ async def verify(scenario):
                         title="Old Metro Center",
                         data={
                             "api_key": "fixture-key",
-                            "service_type": "train",
+                            **(
+                                {"service_type": "train"}
+                                if scenario == "upgrade"
+                                else {}
+                            ),
                             "id": "A01",
-                            "lines": ["RD"],
+                            **({"lines": ["RD"]} if scenario != "repair_300" else {}),
                         },
                         options={
-                            "prediction_count": 6,
-                            "lines": ["RD"],
+                            **(
+                                {"prediction_count": 6, "lines": ["RD"]}
+                                if scenario != "repair_300"
+                                else {}
+                            ),
                             "scan_interval": 60,
                         },
-                        version=1,
+                        version=2 if scenario == "repair_300" else 1,
                         minor_version=1,
                         source="user",
                         unique_id="A01",
@@ -445,7 +452,8 @@ async def verify(scenario):
                     assert await hass.config_entries.async_setup(rail.entry_id)
                     await wait_loaded(rail)
                     assert hass.states.get(retained_board.entity_id) is not None
-                    assert rail.version == 2
+                    assert rail.version == 3
+                    assert rail.data["service_type"] == "train"
                     assert rail.data["api_key"] == "fixture-key"
                     assert rail.options["scan_interval"] == 60
                     assert "prediction_count" not in rail.options
@@ -568,5 +576,9 @@ async def verify(scenario):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scenario", choices=["clean", "upgrade"], required=True)
+    parser.add_argument(
+        "--scenario",
+        choices=["clean", "upgrade", "upgrade_1x", "repair_300"],
+        required=True,
+    )
     asyncio.run(verify(parser.parse_args().scenario))

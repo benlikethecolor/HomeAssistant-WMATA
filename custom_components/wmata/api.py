@@ -333,12 +333,22 @@ class WmataApi:
             )
         ]
 
-    async def stop_name(self, stop: str) -> str:
+    async def stop_info(self, stop: str) -> dict[str, Any]:
+        """Stop metadata includes served routes even without live predictions."""
         data = await self.get("Bus.svc/json/jStopSchedule", StopID=stop)
         info = data.get("Stop")
         if not isinstance(info, dict) or not info.get("Name"):
             raise InvalidLocation("Unknown bus stop")
-        return str(info["Name"])
+        routes = info.get("Routes")
+        return {
+            "Name": str(info["Name"]),
+            "Routes": [r for r in routes if isinstance(r, str)]
+            if isinstance(routes, list)
+            else [],
+        }
+
+    async def stop_name(self, stop: str) -> str:
+        return (await self.stop_info(stop))["Name"]
 
     @staticmethod
     def _items(data: dict[str, Any], key: str) -> list[dict[str, Any]]:
