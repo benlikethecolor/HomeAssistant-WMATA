@@ -1,0 +1,30 @@
+# Paste into a new dashboard's raw configuration editor.
+# Add Metro Center and a systemwide train map first, then replace entity IDs
+# with the ones in Settings > Devices & services > WMATA > Entities.
+# Enable the optional Health sensor to use the final card.
+title: Metro
+views:
+  - title: Metro
+    path: metro
+    icon: mdi:subway
+    cards:
+      - type: custom:wmata-station-card
+        entity: sensor.wmata_metro_center_arrivals
+        appearance: native
+        max_rows: 8
+      - type: custom:wmata-trip-planner
+        entity: sensor.wmata_metro_center_arrivals
+        origin: Union Station
+        destination: Huntington
+        appearance: native
+        transfer_buffer: 4
+        accessibility: warn
+      - type: custom:wmata-train-map
+        entity: sensor.wmata_network_trains
+        view: geographic
+        height: 650
+        theme_mode: auto
+      - type: entities
+        title: Integration health
+        entities:
+          - entity: sensor.wmata_metro_center_health

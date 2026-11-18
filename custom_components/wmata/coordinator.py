@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -76,6 +77,8 @@ class WmataCoordinator(DataUpdateCoordinator[APIData]):
             async_get_clientsession(hass), config_entry.data[CONF_API_KEY], hass=hass
         )
         self._metadata_loaded = False
+        self._metadata_refresh_at = 0
+        self.metadata_status = {"updated_at": None, "stale": True}
         # Scheduled and observed bus routes, including routes with no predictions.
         self.routes: set[str] = set()
         super().__init__(
@@ -88,51 +91,67 @@ class WmataCoordinator(DataUpdateCoordinator[APIData]):
             ),
         )
 
+    async def _refresh_metadata(self):
+        if self.service_type == "bus":
+            stop = await self.api.stop_info(self.location)
+            self.location_name = stop["Name"]
+            self.routes = set(
+                route for route in map(base_route, stop["Routes"]) if route
+            )
+        else:
+            stations = await self.api.stations()
+            selected = next(
+                (s for s in stations if s.get("Code") == self.location), None
+            )
+            if not selected:
+                raise InvalidLocation("Unknown station")
+            self.location_name = selected["Name"]
+            # WMATA publishes together codes for transfer station platforms.
+            self.codes = list(
+                dict.fromkeys(
+                    [
+                        *self.codes,
+                        *[
+                            selected[k]
+                            for k in ("StationTogether1", "StationTogether2")
+                            if selected.get(k)
+                        ],
+                    ]
+                )
+            )
+            self.served_lines = sorted(
+                {
+                    s[k]
+                    for s in stations
+                    if s.get("Code") in self.codes
+                    for k in (
+                        "LineCode1",
+                        "LineCode2",
+                        "LineCode3",
+                        "LineCode4",
+                    )
+                    if s.get(k) in LINE_NAME_MAP
+                }
+            )
+
     async def _async_update_data(self) -> APIData:
         try:
-            if not self._metadata_loaded:
-                if self.service_type == "bus":
-                    stop = await self.api.stop_info(self.location)
-                    self.location_name = stop["Name"]
-                    self.routes.update(
-                        route for route in map(base_route, stop["Routes"]) if route
-                    )
+            now = asyncio.get_running_loop().time()
+            if now >= self._metadata_refresh_at:
+                try:
+                    await self._refresh_metadata()
+                except (APIConnectionError, InvalidLocation):
+                    self._metadata_refresh_at = now + 300
+                    self.metadata_status = {**self.metadata_status, "stale": True}
+                    if not self._metadata_loaded:
+                        raise
                 else:
-                    stations = await self.api.stations()
-                    selected = next(
-                        (s for s in stations if s.get("Code") == self.location), None
-                    )
-                    if not selected:
-                        raise InvalidLocation("Unknown station")
-                    self.location_name = selected["Name"]
-                    # WMATA publishes together codes for transfer station platforms.
-                    self.codes = list(
-                        dict.fromkeys(
-                            [
-                                *self.codes,
-                                *[
-                                    selected[k]
-                                    for k in ("StationTogether1", "StationTogether2")
-                                    if selected.get(k)
-                                ],
-                            ]
-                        )
-                    )
-                    self.served_lines = sorted(
-                        {
-                            s[k]
-                            for s in stations
-                            if s.get("Code") in self.codes
-                            for k in (
-                                "LineCode1",
-                                "LineCode2",
-                                "LineCode3",
-                                "LineCode4",
-                            )
-                            if s.get(k) in LINE_NAME_MAP
-                        }
-                    )
-                self._metadata_loaded = True
+                    self._metadata_loaded = True
+                    self.metadata_status = {
+                        "updated_at": datetime.now(UTC).isoformat(),
+                        "stale": False,
+                    }
+                    self._metadata_refresh_at = asyncio.get_running_loop().time() + 3600
             if self.service_type == "train":
                 trains = await self.api.trains(self.codes)
                 return APIData(

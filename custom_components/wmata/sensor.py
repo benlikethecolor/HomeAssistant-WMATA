@@ -16,6 +16,7 @@ from .commute import DIRECTIONS
 from .const import CONF_JOURNEYS, DOMAIN, LINE_NAME_MAP, STATION_CODE_MAP
 from .coordinator import WmataCoordinator
 from .directions import station_directions
+from .health import health_snapshot
 from .journeys import describe_route
 from .predictions import filter_arrivals
 
@@ -26,14 +27,17 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Reconcile only this entry's entities, including removed saved journeys."""
     coordinator = entry.runtime_data
     if entry.data["service_type"] == "map":
-        async_add_entities([NetworkMapSensor(coordinator)])
+        board = NetworkMapSensor(coordinator)
+        async_add_entities([board, WmataHealthSensor(coordinator, board)])
         return
     if entry.data["service_type"] == "commute":
-        async_add_entities(
+        sensors = [
             WmataCommuteSensor(coordinator, direction, kind)
             for direction in DIRECTIONS
             for kind in ("travel_time", "next_train", "arrival")
-        )
+        ]
+        sensors.append(WmataHealthSensor(coordinator, sensors[0]))
+        async_add_entities(sensors)
         return
     sensors = [WmataBoardSensor(coordinator)]
     sensors.extend(
@@ -50,9 +54,30 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
             for line in coordinator.served_lines
             for direction in station_directions(line, coordinator.codes)
         )
+    sensors.append(WmataHealthSensor(coordinator, sensors[0]))
     active = {sensor.unique_id for sensor in sensors}
     registry = er.async_get(hass)
     for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        # Keep withdrawn line sensors across reloads so user entity IDs survive.
+        prefix = f"wmata_train_{coordinator.location.lower()}_journey_line_"
+        if (
+            coordinator.service_type == "train"
+            and entity.platform == DOMAIN
+            and entity.domain == "sensor"
+            and entity.unique_id.startswith(prefix)
+            and entity.unique_id not in active
+        ):
+            parts = entity.unique_id[len(prefix) :].split("_")
+            if (
+                len(parts) == 2
+                and parts[0] in LINE_NAME_MAP
+                and parts[1] in ("eastbound", "westbound", "northbound", "southbound")
+            ):
+                sensor = WmataDirectionSensor(
+                    coordinator, parts[0], parts[1].capitalize()
+                )
+                sensors.append(sensor)
+                active.add(sensor.unique_id)
         if (
             entity.platform == DOMAIN
             and entity.domain == "sensor"
@@ -60,6 +85,63 @@ async def async_setup_entry(hass, entry, async_add_entities) -> None:
         ):
             registry.async_remove(entity.entity_id)
     async_add_entities(sensors)
+    if coordinator.service_type == "train":
+        known = {sensor.unique_id for sensor in sensors}
+
+        def update_directions():
+            additions = []
+            for line in coordinator.served_lines:
+                for direction in station_directions(line, coordinator.codes):
+                    sensor = WmataDirectionSensor(coordinator, line, direction)
+                    if sensor.unique_id not in known:
+                        known.add(sensor.unique_id)
+                        additions.append(sensor)
+            if additions:
+                async_add_entities(additions)
+
+        entry.async_on_unload(coordinator.async_add_listener(update_directions))
+
+
+class WmataHealthSensor(CoordinatorEntity, SensorEntity):
+    """Optional health entity, also useful with the built-in entities card."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Health"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
+    _attr_icon = "mdi:heart-pulse"
+    _unrecorded_attributes = frozenset(
+        {
+            "last_successful_request",
+            "last_error_type",
+            "requests",
+            "failures",
+            "rate_limit_seconds",
+            "timetable",
+            "feeds",
+            "polling_available",
+            "metadata",
+        }
+    )
+
+    def __init__(self, coordinator, board):
+        super().__init__(coordinator)
+        self._attr_unique_id = board.unique_id + "_health"
+        self._attr_device_info = board.device_info
+
+    @property
+    def available(self):
+        return True
+
+    @property
+    def native_value(self):
+        return health_snapshot(self.coordinator)["status"]
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            k: v for k, v in health_snapshot(self.coordinator).items() if k != "status"
+        }
 
 
 class WmataBoardSensor(CoordinatorEntity[WmataCoordinator], SensorEntity):
@@ -395,6 +477,13 @@ class WmataDirectionSensor(WmataJourneySensor):
     """Ready-made ETAs: enable one, then use it in a numeric-state trigger."""
 
     _attr_entity_registry_enabled_default = False
+
+    @property
+    def available(self):
+        return (
+            super().available
+            and self.journey["lines"][0] in self.coordinator.served_lines
+        )
 
     def __init__(self, coordinator, line, direction):
         super().__init__(

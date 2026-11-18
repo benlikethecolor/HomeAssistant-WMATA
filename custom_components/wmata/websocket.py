@@ -1,7 +1,7 @@
 """Authenticated on-demand predictions for train maps and saved journeys."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import voluptuous as vol
 from homeassistant.auth.permissions.const import POLICY_READ
@@ -14,6 +14,7 @@ from .connections import ride_minutes
 from .const import CONF_JOURNEYS, DOMAIN, STATION_CODE_MAP, station_codes
 from .directions import ROUTES
 from .journeys import candidate_journeys, describe_route, trip_matches
+from .planning import accessibility, filter_accessible, scheduled_journeys
 from .station_predictions import (
     async_station_predictions,
     async_station_predictions_many,
@@ -254,6 +255,14 @@ async def planner_stations(hass, connection, msg):
         vol.Required("entity_id"): str,
         vol.Required("origin"): vol.In(STATION_CODE_MAP),
         vol.Required("destination"): vol.In(STATION_CODE_MAP),
+        vol.Optional("mode", default="now"): vol.In(["now", "depart_at", "arrive_by"]),
+        vol.Optional("when"): str,
+        vol.Optional("accessibility", default="warn"): vol.In(
+            ["standard", "warn", "avoid"]
+        ),
+        vol.Optional("transfer_buffer", default=3): vol.All(
+            int, vol.Range(min=1, max=30)
+        ),
     }
 )
 @websocket_api.async_response
@@ -268,10 +277,76 @@ async def plan_trip(hass, connection, msg):
             msg["id"], "invalid_route", "Choose two different Metro stations"
         )
         return
+    preference = msg.get("accessibility", "warn")
+    units = await api.unit_outages() if preference != "standard" else []
+    unit_status = api.alert_status("units") if preference != "standard" else None
+    warnings = accessibility(routes, units)
+    if preference == "avoid" and (not unit_status or unit_status.get("stale")):
+        connection.send_error(
+            msg["id"],
+            "accessibility_unavailable",
+            "Elevator status is unavailable. Choose warnings only or try again.",
+        )
+        return
+    routes = filter_accessible(routes, warnings, preference == "avoid")
+    if not routes:
+        connection.send_error(
+            msg["id"],
+            "no_accessible_route",
+            "Every candidate route uses a station with a reported elevator outage. Try warnings only to see the routes.",
+        )
+        return
+    info = {"warnings": warnings, "status": unit_status, "preference": preference}
+    mode = msg.get("mode", "now")
+    if mode != "now":
+        try:
+            requested = datetime.fromisoformat(msg.get("when", ""))
+            now = datetime.now(UTC)
+            if requested.tzinfo is None or not now <= requested <= now + timedelta(
+                days=7
+            ):
+                raise ValueError
+        except (TypeError, ValueError):
+            connection.send_error(
+                msg["id"],
+                "invalid_time",
+                "Choose a future time within the next seven days, including a timezone.",
+            )
+            return
+        schedule = api.rail_schedule_nowait()
+        journeys = (
+            await hass.async_add_executor_job(
+                scheduled_journeys,
+                schedule,
+                routes,
+                requested,
+                mode,
+                msg.get("transfer_buffer", 3),
+                now,
+            )
+            if schedule
+            else []
+        )
+        connection.send_result(
+            msg["id"],
+            {
+                "planning": {
+                    "mode": mode,
+                    "requested_at": requested.isoformat(),
+                    "pending": api.rail_schedule_pending,
+                    "journeys": journeys,
+                },
+                "accessibility": info,
+            },
+        )
+        return
     alternatives = await trip_alternatives(hass, api, routes)
     # Clients rank these using the same live/timetable connection calculator as
     # their journey card and the user's platform-change allowance.
-    connection.send_result(msg["id"], {**alternatives[0], "alternatives": alternatives})
+    connection.send_result(
+        msg["id"],
+        {**alternatives[0], "alternatives": alternatives, "accessibility": info},
+    )
 
 
 async def trip_alternatives(hass, api, routes, station_data=None, timetable=True):

@@ -142,3 +142,31 @@ The source URLs are in [GEO_SOURCES.md](../custom_components/wmata/GEO_SOURCES.m
 - `tools/build_schematic_geometry.py` traces the official map PDF. It needs PyMuPDF, NumPy, Pillow, SciPy, and scikit-image, along with the station anchors and a JSON list of `[line_code, ordered_station_codes]` pairs. The PDF's hash is pinned in the script, because new artwork changes the drawing IDs it relies on.
 
 Write the output to a temporary directory first, diff it against the bundled JSON, and look at both map views before replacing anything. Keep the data and Leaflet attribution files with the integration.
+
+
+## Future trips, accessibility, and health
+
+`planning.py` uses timetable departures only for explicit future trips. Depart-at
+works forward, choosing the earliest reachable arrival for each leg. Arrive-by
+works backwards from the deadline, choosing the latest catchable departure, with
+the transfer allowance subtracted before the preceding leg. The search is bounded
+to six hours and the next seven days; the feed validity dates still apply. The
+GTFS index retains the week ahead (plus midnight/DST boundaries). Scheduled plans
+are calculated in the executor and kept separate from live card estimates.
+
+Elevator filtering uses physical station names to join alternate platform codes.
+Only origins, transfer stations, and destinations matter; a station passed through
+on a train does not require an elevator. The avoid option requires a fresh outage
+feed. Warnings use current reports, not predictions of future elevator service.
+
+Station metadata refreshes hourly and backs off five minutes on failure. A refresh
+failure retains the working metadata and does not hide predictions. Rail entity
+setup subscribes to metadata changes to add new line/direction sensors; existing
+IDs stay registered when a line is withdrawn, with unavailable state.
+
+Health is an optional diagnostic entity per entry and an allowlisted diagnostics
+section. Request counts cover JSON requests; failures include attempts suppressed
+by cooldown. State and feed timestamps carry no credentials or location names.
+`tools/monitor_soak.py` samples those fields without changing HA. Historical schema
+fixtures are sanitized representative data based on the tagged config flows, not
+exports from someone's Home Assistant instance.

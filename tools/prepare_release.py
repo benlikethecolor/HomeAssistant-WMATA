@@ -23,7 +23,13 @@ def prepare(tag: str, output: Path) -> dict[str, str]:
     minimum = json.loads((ROOT / "hacs.json").read_text())["homeassistant"]
     archive = build(output / f"wmata-{version}.zip")
     notes = output / "release-notes.md"
-    body = f"Requires Home Assistant {minimum} or newer.\n\n"
+    prerelease = "-" in version
+    body = (
+        "Pre-release for testing. Back up Home Assistant before installing.\n\n"
+        if prerelease
+        else ""
+    )
+    body += f"Requires Home Assistant {minimum} or newer.\n\n"
     if version.startswith("3."):
         body += (
             "Upgrading from 2.x: numbered sensors are replaced by arrival boards. "
@@ -37,6 +43,7 @@ def prepare(tag: str, output: Path) -> dict[str, str]:
     return {
         "tag": tag,
         "version": version,
+        "prerelease": "true" if prerelease else "false",
         "archive": str(archive),
         "notes": str(notes),
     }
