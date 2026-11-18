@@ -74,7 +74,7 @@ class WmataCoordinator(DataUpdateCoordinator[APIData]):
             async_get_clientsession(hass), config_entry.data[CONF_API_KEY], hass=hass
         )
         self._metadata_loaded = False
-        # Bus routes seen at this stop, so alerts still match between buses.
+        # Scheduled and observed bus routes, including routes with no predictions.
         self.routes: set[str] = set()
         super().__init__(
             hass,
@@ -90,7 +90,11 @@ class WmataCoordinator(DataUpdateCoordinator[APIData]):
         try:
             if not self._metadata_loaded:
                 if self.service_type == "bus":
-                    self.location_name = await self.api.stop_name(self.location)
+                    stop = await self.api.stop_info(self.location)
+                    self.location_name = stop["Name"]
+                    self.routes.update(
+                        route for route in map(base_route, stop["Routes"]) if route
+                    )
                 else:
                     stations = await self.api.stations()
                     selected = next(

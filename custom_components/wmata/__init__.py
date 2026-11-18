@@ -4,7 +4,7 @@ from homeassistant.const import Platform
 from homeassistant.helpers import config_validation as cv
 
 from .commute import CommuteCoordinator
-from .const import CONF_JOURNEYS, DOMAIN
+from .const import CONF_JOURNEYS, CONF_SERVICE_TYPE, DOMAIN
 from .coordinator import WmataCoordinator
 from .frontend import async_setup_card
 from .train_map import MapCoordinator
@@ -23,8 +23,11 @@ async def async_setup(hass, config) -> bool:
 
 async def async_migrate_entry(hass, entry) -> bool:
     """Replace numbered slots with a complete board; preserve locations and keys."""
-    if entry.version > 2:
+    if entry.version > 3:
         return False
+    if entry.version == 3:
+        return True
+    data, options = dict(entry.data), dict(entry.options)
     if entry.version == 1:
         data = {
             k: v
@@ -37,9 +40,10 @@ async def async_migrate_entry(hass, entry) -> bool:
             if k not in ("lines", "routes", "prediction_count")
         }
         options.setdefault(CONF_JOURNEYS, [])
-        hass.config_entries.async_update_entry(
-            entry, data=data, options=options, version=2
-        )
+    # Original 1.x entries were rail-only and did not store a service type.
+    # Also repair those already migrated to entry version 2 by release 3.0.0.
+    data.setdefault(CONF_SERVICE_TYPE, "train")
+    hass.config_entries.async_update_entry(entry, data=data, options=options, version=3)
     return True
 
 

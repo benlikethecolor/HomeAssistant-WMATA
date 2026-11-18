@@ -170,7 +170,7 @@ async def validate_location(hass, data):
 class WmataConfigFlow(ConfigFlow, domain=DOMAIN):
     """Configure one station (all platforms) or one bus stop per entry."""
 
-    VERSION = 2
+    VERSION = 3
 
     @staticmethod
     @callback

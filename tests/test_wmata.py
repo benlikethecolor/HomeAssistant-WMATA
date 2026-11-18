@@ -133,7 +133,7 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
             stations=AsyncMock(return_value=STATIONS),
             trains=AsyncMock(return_value=[]),
             buses=AsyncMock(return_value=[]),
-            stop_name=AsyncMock(return_value="Test stop"),
+            stop_info=AsyncMock(return_value={"Name": "Test stop", "Routes": []}),
             rail_alerts=AsyncMock(return_value=[]),
             bus_alerts=AsyncMock(return_value=[]),
             unit_outages=AsyncMock(return_value=[]),
@@ -300,17 +300,48 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(await async_migrate_entry(hass, e))
         update = hass.config_entries.async_update_entry.call_args.kwargs
-        self.assertEqual(update["version"], 2)
+        self.assertEqual(update["version"], 3)
         self.assertEqual(update["data"]["api_key"], "test-key")
         self.assertNotIn("lines", update["data"])
         self.assertEqual(update["options"], {"scan_interval": 60, "journeys": []})
+
+    async def test_original_rail_entries_and_failed_300_migrations_are_repaired(self):
+        for version in (1, 2):
+            with self.subTest(version=version):
+                # This is the exact data schema used by the original 1.x releases.
+                e_data = {"api_key": "test-key", "id": "A01"}
+                e = SimpleNamespace(version=version, data=e_data, options={})
+                update_entry = MagicMock()
+                hass = SimpleNamespace(
+                    config_entries=SimpleNamespace(async_update_entry=update_entry)
+                )
+                self.assertTrue(await async_migrate_entry(hass, e))
+                updates = update_entry.call_args.kwargs
+                self.assertEqual(updates["data"], {**e_data, "service_type": "train"})
+                self.assertEqual(updates["version"], 3)
+
+    async def test_v2_migration_keeps_bus_settings_and_journeys(self):
+        e = entry(
+            "bus",
+            "1001195",
+            options={"journeys": [{"id": "saved"}], "scan_interval": 45},
+        )
+        update_entry = MagicMock()
+        hass = SimpleNamespace(
+            config_entries=SimpleNamespace(async_update_entry=update_entry)
+        )
+        self.assertTrue(await async_migrate_entry(hass, e))
+        updates = update_entry.call_args.kwargs
+        self.assertEqual(updates["data"], e.data)
+        self.assertEqual(updates["options"], e.options)
+        self.assertEqual(updates["version"], 3)
 
     async def test_newer_entry_versions_are_not_downgraded(self):
         hass = SimpleNamespace(
             config_entries=SimpleNamespace(async_update_entry=MagicMock())
         )
-        self.assertFalse(await async_migrate_entry(hass, entry(version=3)))
-        self.assertTrue(await async_migrate_entry(hass, entry(version=2)))
+        self.assertFalse(await async_migrate_entry(hass, entry(version=4)))
+        self.assertTrue(await async_migrate_entry(hass, entry(version=3)))
         hass.config_entries.async_update_entry.assert_not_called()
 
     async def test_bundled_card_served_and_registered(self):
@@ -810,6 +841,22 @@ class ApiTest(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(APIConnectionError):
                     await api.get("test")
                 self.assertEqual(session.get.call_count, 1)
+
+    async def test_stop_metadata_includes_routes_without_scheduled_arrivals(self):
+        api = WmataApi(MagicMock(), "private-key")
+        api.get = AsyncMock(
+            return_value={
+                "Stop": {"Name": "K St", "Routes": ["D34v1", "D36", None]},
+                "ScheduleArrivals": [],
+            }
+        )
+        self.assertEqual(
+            await api.stop_info("1001195"), {"Name": "K St", "Routes": ["D34v1", "D36"]}
+        )
+        api.get.assert_awaited_once_with("Bus.svc/json/jStopSchedule", StopID="1001195")
+        for routes in (None, "D34", []):
+            api.get.return_value = {"Stop": {"Name": "K St", "Routes": routes}}
+            self.assertEqual((await api.stop_info("1001195"))["Routes"], [])
 
     async def test_unknown_bus_stop_is_an_invalid_location(self):
         api = WmataApi(MagicMock(), "private-key")

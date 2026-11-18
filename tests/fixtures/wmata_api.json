@@ -54,7 +54,8 @@
   },
   "Bus.svc/json/jStopSchedule": {
     "Stop": {
-      "Name": "Fixture bus stop"
+      "Name": "Fixture bus stop",
+      "Routes": ["D34", "D36v1"]
     }
   },
   "NextBusService.svc/json/jPredictions": {
