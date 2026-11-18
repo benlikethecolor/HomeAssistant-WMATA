@@ -1,6 +1,7 @@
 name: HACS Action
 
 on:
+  workflow_dispatch:
   push:
   pull_request:
   schedule:
@@ -11,7 +12,9 @@ jobs:
     name: HACS Action
     runs-on: "ubuntu-latest"
     steps:
+      - uses: actions/checkout@v4
       - name: HACS Action
         uses: "hacs/action@main"
         with:
           category: "integration"
+          comment: false

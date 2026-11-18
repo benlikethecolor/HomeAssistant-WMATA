@@ -1,0 +1,412 @@
+[
+  {
+    "name": "direct trip is the next train plus its ride",
+    "buffer": 3,
+    "legs": [
+      {
+        "ride_minutes": 8,
+        "arrivals": [
+          {
+            "line": "RD",
+            "minutes": 4,
+            "status": "predicted"
+          },
+          {
+            "line": "RD",
+            "minutes": 9,
+            "status": "predicted"
+          }
+        ]
+      }
+    ],
+    "expect": {
+      "arrival": 12,
+      "departure": 4,
+      "first_line": "RD",
+      "schedule_estimate": false
+    }
+  },
+  {
+    "name": "a transfer adds the ride and platform time, and a train leaving exactly then is catchable",
+    "buffer": 3,
+    "legs": [
+      {
+        "ride_minutes": 4,
+        "arrivals": [
+          {
+            "line": "OR",
+            "minutes": 4,
+            "status": "predicted"
+          }
+        ]
+      },
+      {
+        "ride_minutes": 8,
+        "arrivals": [
+          {
+            "line": "RD",
+            "minutes": 10,
+            "status": "predicted"
+          },
+          {
+            "line": "RD",
+            "minutes": 11,
+            "status": "predicted"
+          },
+          {
+            "line": "RD",
+            "minutes": 16,
+            "status": "predicted"
+          }
+        ]
+      }
+    ],
+    "expect": {
+      "arrival": 19,
+      "departure": 4,
+      "first_line": "OR",
+      "schedule_estimate": false
+    }
+  },
+  {
+    "name": "a longer platform allowance pushes the connection to the following train",
+    "buffer": 8,
+    "legs": [
+      {
+        "ride_minutes": 4,
+        "arrivals": [
+          {
+            "line": "OR",
+            "minutes": 4,
+            "status": "predicted"
+          }
+        ]
+      },
+      {
+        "ride_minutes": 8,
+        "arrivals": [
+          {
+            "line": "RD",
+            "minutes": 10,
+            "status": "predicted"
+          },
+          {
+            "line": "RD",
+            "minutes": 11,
+            "status": "predicted"
+          },
+          {
+            "line": "RD",
+            "minutes": 16,
+            "status": "predicted"
+          }
+        ]
+      }
+    ],
+    "expect": {
+      "arrival": 24,
+      "departure": 4,
+      "first_line": "OR",
+      "schedule_estimate": false
+    }
+  },
+  {
+    "name": "arriving and boarding trains leave now, delayed and unknown ones are ignored",
+    "buffer": 3,
+    "legs": [
+      {
+        "ride_minutes": 5,
+        "arrivals": [
+          {
+            "line": "BL",
+            "minutes": null,
+            "status": "delayed"
+          },
+          {
+            "line": "BL",
+            "minutes": null,
+            "status": "unknown"
+          },
+          {
+            "line": "BL",
+            "minutes": 0,
+            "status": "boarding"
+          }
+        ]
+      }
+    ],
+    "expect": {
+      "arrival": 5,
+      "departure": 0,
+      "first_line": "BL",
+      "schedule_estimate": false
+    }
+  },
+  {
+    "name": "no connection inside the live window and no timetable means no estimate",
+    "buffer": 3,
+    "legs": [
+      {
+        "ride_minutes": 4,
+        "arrivals": [
+          {
+            "line": "OR",
+            "minutes": 4,
+            "status": "predicted"
+          }
+        ]
+      },
+      {
+        "ride_minutes": 8,
+        "arrivals": [
+          {
+            "line": "RD",
+            "minutes": 2,
+            "status": "predicted"
+          }
+        ]
+      }
+    ],
+    "expect": {
+      "arrival": null,
+      "departure": 4,
+      "first_line": "OR",
+      "schedule_estimate": false
+    }
+  },
+  {
+    "name": "the timetable fills in after the last live train and marks the estimate",
+    "buffer": 3,
+    "legs": [
+      {
+        "ride_minutes": 4,
+        "arrivals": [
+          {
+            "line": "OR",
+            "minutes": 4,
+            "status": "predicted"
+          }
+        ]
+      },
+      {
+        "ride_minutes": 8,
+        "arrivals": [
+          {
+            "line": "RD",
+            "minutes": 2,
+            "status": "predicted"
+          }
+        ],
+        "scheduled": [
+          {
+            "line": "RD",
+            "departs": 1,
+            "arrives": 9
+          },
+          {
+            "line": "RD",
+            "departs": 14,
+            "arrives": 23
+          }
+        ]
+      }
+    ],
+    "expect": {
+      "arrival": 23,
+      "departure": 4,
+      "first_line": "OR",
+      "schedule_estimate": true
+    }
+  },
+  {
+    "name": "live predictions win over the timetable inside their window",
+    "buffer": 3,
+    "legs": [
+      {
+        "ride_minutes": 4,
+        "arrivals": [
+          {
+            "line": "OR",
+            "minutes": 4,
+            "status": "predicted"
+          }
+        ]
+      },
+      {
+        "ride_minutes": 8,
+        "arrivals": [
+          {
+            "line": "RD",
+            "minutes": 13,
+            "status": "predicted"
+          },
+          {
+            "line": "RD",
+            "minutes": 20,
+            "status": "predicted"
+          }
+        ],
+        "scheduled": [
+          {
+            "line": "RD",
+            "departs": 12,
+            "arrives": 19
+          }
+        ]
+      }
+    ],
+    "expect": {
+      "arrival": 21,
+      "departure": 4,
+      "first_line": "OR",
+      "schedule_estimate": false
+    }
+  },
+  {
+    "name": "a stale transfer snapshot is not trusted",
+    "buffer": 3,
+    "legs": [
+      {
+        "ride_minutes": 4,
+        "arrivals": [
+          {
+            "line": "OR",
+            "minutes": 4,
+            "status": "predicted"
+          }
+        ]
+      },
+      {
+        "ride_minutes": 8,
+        "age_seconds": 200,
+        "arrivals": [
+          {
+            "line": "RD",
+            "minutes": 12,
+            "status": "predicted"
+          }
+        ]
+      }
+    ],
+    "expect": {
+      "arrival": null,
+      "departure": 4,
+      "first_line": "OR",
+      "schedule_estimate": false
+    }
+  },
+  {
+    "name": "an unavailable origin falls back to the timetable for the whole trip",
+    "buffer": 3,
+    "legs": [
+      {
+        "available": false,
+        "ride_minutes": 6,
+        "arrivals": [],
+        "scheduled": [
+          {
+            "line": "RD",
+            "departs": 5,
+            "arrives": 12
+          }
+        ]
+      }
+    ],
+    "expect": {
+      "arrival": 12,
+      "departure": 5,
+      "first_line": "RD",
+      "schedule_estimate": true
+    }
+  },
+  {
+    "name": "a missing ride time leaves the arrival unknown",
+    "buffer": 3,
+    "legs": [
+      {
+        "ride_minutes": null,
+        "arrivals": [
+          {
+            "line": "GR",
+            "minutes": 3,
+            "status": "predicted"
+          }
+        ]
+      }
+    ],
+    "expect": {
+      "arrival": null,
+      "departure": 3,
+      "first_line": "GR",
+      "schedule_estimate": false
+    }
+  },
+  {
+    "name": "nothing to board means nothing to estimate",
+    "buffer": 3,
+    "legs": [
+      {
+        "ride_minutes": 6,
+        "arrivals": []
+      }
+    ],
+    "expect": {
+      "arrival": null,
+      "departure": null,
+      "first_line": null,
+      "schedule_estimate": false
+    }
+  },
+  {
+    "name": "two transfers carry each connection into the next leg",
+    "buffer": 2,
+    "legs": [
+      {
+        "ride_minutes": 3,
+        "arrivals": [
+          {
+            "line": "SV",
+            "minutes": 1,
+            "status": "predicted"
+          }
+        ]
+      },
+      {
+        "ride_minutes": 5,
+        "arrivals": [
+          {
+            "line": "RD",
+            "minutes": 5,
+            "status": "predicted"
+          },
+          {
+            "line": "RD",
+            "minutes": 6,
+            "status": "predicted"
+          }
+        ]
+      },
+      {
+        "ride_minutes": 4,
+        "arrivals": [
+          {
+            "line": "GR",
+            "minutes": 12,
+            "status": "predicted"
+          },
+          {
+            "line": "GR",
+            "minutes": 14,
+            "status": "predicted"
+          }
+        ]
+      }
+    ],
+    "expect": {
+      "arrival": 18,
+      "departure": 1,
+      "first_line": "SV",
+      "schedule_estimate": false
+    }
+  }
+]

@@ -1,0 +1,5 @@
+custom_components/wmata/www/vendor/
+**/geo_shapes.json
+**/route_shapes.json
+**/geo_routes.json
+package-lock.json

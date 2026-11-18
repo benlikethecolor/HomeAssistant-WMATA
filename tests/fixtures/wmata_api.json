@@ -1,0 +1,262 @@
+{
+  "Rail.svc/json/jStations": {
+    "Stations": [
+      {
+        "Code": "A01",
+        "Name": "Metro Center",
+        "LineCode1": "RD",
+        "StationTogether1": "C01"
+      },
+      {
+        "Code": "C01",
+        "Name": "Metro Center",
+        "LineCode1": "BL",
+        "LineCode2": "OR",
+        "LineCode3": "SV",
+        "StationTogether1": "A01"
+      },
+      {
+        "Code": "A02",
+        "Name": "Farragut North",
+        "LineCode1": "RD"
+      }
+    ]
+  },
+  "StationPrediction": {
+    "Trains": [
+      {
+        "Line": "RD",
+        "Min": "4",
+        "DestinationCode": "B11",
+        "DestinationName": "Glenmont",
+        "LocationCode": "A01",
+        "Group": "1",
+        "Car": "8"
+      },
+      {
+        "Line": "OR",
+        "Min": "7",
+        "DestinationCode": "D13",
+        "DestinationName": "NewCrlton",
+        "LocationCode": "C01",
+        "Group": "2",
+        "Car": "6"
+      }
+    ]
+  },
+  "Bus.svc/json/jRoutes": {
+    "Routes": [
+      {
+        "RouteID": "D34",
+        "Name": "D34"
+      }
+    ]
+  },
+  "Bus.svc/json/jStopSchedule": {
+    "Stop": {
+      "Name": "Fixture bus stop"
+    }
+  },
+  "NextBusService.svc/json/jPredictions": {
+    "Predictions": [
+      {
+        "Minutes": 3,
+        "RouteID": "D34",
+        "DirectionText": "East to Union Station",
+        "DirectionNum": 0,
+        "VehicleID": "1234",
+        "TripID": "fixture"
+      }
+    ]
+  },
+  "TrainPositions/StandardRoutes": {
+    "StandardRoutes": [
+      {
+        "LineCode": "RD",
+        "TrackNum": 1,
+        "TrackCircuits": [
+          {
+            "CircuitId": 1,
+            "StationCode": "A01"
+          },
+          {
+            "CircuitId": 2
+          },
+          {
+            "CircuitId": 3,
+            "StationCode": "A02"
+          }
+        ]
+      }
+    ]
+  },
+  "TrainPositions/TrackCircuits": {
+    "TrackCircuits": [
+      {
+        "CircuitId": 1,
+        "Neighbors": [
+          {
+            "CircuitIds": [
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "CircuitId": 2,
+        "Neighbors": [
+          {
+            "CircuitIds": [
+              1,
+              3,
+              4
+            ]
+          }
+        ]
+      },
+      {
+        "CircuitId": 3,
+        "Neighbors": [
+          {
+            "CircuitIds": [
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "CircuitId": 4,
+        "Neighbors": [
+          {
+            "CircuitIds": [
+              2
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "TrainPositions/TrainPositions": {
+    "TrainPositions": [
+      {
+        "TrainId": "001",
+        "CircuitId": 2,
+        "LineCode": "RD",
+        "DestinationStationCode": "B11",
+        "ServiceType": "Normal"
+      },
+      {
+        "TrainId": "002",
+        "CircuitId": 4,
+        "LineCode": "RD",
+        "DestinationStationCode": "A15",
+        "ServiceType": "NoPassengers"
+      },
+      {
+        "TrainId": "003",
+        "CircuitId": 999,
+        "LineCode": null,
+        "ServiceType": "Unknown"
+      }
+    ]
+  },
+  "Bus.svc/json/jStops": {
+    "Stops": [
+      {
+        "StopID": "1001195",
+        "Name": "K St NW + 14th St NW",
+        "Lat": 38.903,
+        "Lon": -77.032,
+        "Routes": [
+          "D10",
+          "D10*1"
+        ]
+      },
+      {
+        "StopID": "1001051",
+        "Name": "Fixture bus stop",
+        "Lat": 38.9003,
+        "Lon": -77.0301,
+        "Routes": [
+          "D34",
+          "D34v1",
+          "C10"
+        ]
+      },
+      {
+        "StopID": "0",
+        "Name": "Regional stop without an ID",
+        "Lat": 38.9001,
+        "Lon": -77.03,
+        "Routes": []
+      }
+    ]
+  },
+  "Incidents.svc/json/Incidents": {
+    "Incidents": [
+      {
+        "IncidentID": "RD-1",
+        "IncidentType": "Delay",
+        "LinesAffected": "RD;",
+        "DateUpdated": "2026-11-13T08:15:00",
+        "Description": "Red Line: Expect delays to Glenmont due to a signal problem outside Forest Glen.",
+        "DelaySeverity": null,
+        "EmergencyText": null,
+        "PassengerDelay": 0,
+        "StartLocationFullName": null,
+        "EndLocationFullName": null
+      },
+      {
+        "IncidentID": "GR-1",
+        "IncidentType": "Alert",
+        "LinesAffected": "GR; YL;",
+        "DateUpdated": "2026-11-13T08:20:00",
+        "Description": "Green and Yellow Line: Trains are single tracking between Fort Totten and Greenbelt."
+      }
+    ]
+  },
+  "Incidents.svc/json/BusIncidents": {
+    "BusIncidents": [
+      {
+        "IncidentID": "BUS-1",
+        "IncidentType": "Delay",
+        "RoutesAffected": [
+          "D34",
+          "D36"
+        ],
+        "DateUpdated": "2026-11-13T08:13:03",
+        "Description": "D34, D36: Due to traffic congestion, buses are experiencing up to 20 minute delays."
+      }
+    ]
+  },
+  "Incidents.svc/json/ElevatorIncidents": {
+    "ElevatorIncidents": [
+      {
+        "UnitName": "A01E01",
+        "UnitType": "ELEVATOR",
+        "StationCode": "A01",
+        "StationName": "Metro Center, G and 13th St Entrance",
+        "LocationDescription": "Elevator between street and mezzanine",
+        "SymptomDescription": "Service Call",
+        "DateOutOfServ": "2026-11-12T15:17:00",
+        "DateUpdated": "2026-11-13T06:28:30",
+        "EstimatedReturnToService": "2026-11-15T23:59:59",
+        "DisplayOrder": 0,
+        "SymptomCode": null,
+        "TimeOutOfService": "1517",
+        "UnitStatus": null
+      },
+      {
+        "UnitName": "A03N04",
+        "UnitType": "ESCALATOR",
+        "StationCode": "A03",
+        "StationName": "Dupont Circle, Q Street Entrance",
+        "LocationDescription": "Escalator between mezzanine and platform to Shady Grove",
+        "SymptomDescription": "Service Call",
+        "DateOutOfServ": "2026-11-12T15:17:00",
+        "DateUpdated": "2026-11-13T06:28:30",
+        "EstimatedReturnToService": null
+      }
+    ]
+  }
+}

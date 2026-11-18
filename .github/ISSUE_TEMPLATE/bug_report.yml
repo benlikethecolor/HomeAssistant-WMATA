@@ -1,0 +1,58 @@
+name: Bug report
+description: Report a problem with setup, arrivals, or a dashboard card.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check for an existing report first. Never include your WMATA key, HA token, or an unedited configuration file.
+  - type: input
+    id: integration_version
+    attributes:
+      label: WMATA integration version
+      placeholder: "3.0.0"
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      placeholder: "2026.11.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: service
+    attributes:
+      label: Where does the problem occur?
+      options:
+        - Rail arrivals or journeys
+        - Bus arrivals or journeys
+        - Commute sensors or trip planner
+        - Service alerts or the blueprint
+        - Live train map
+        - Installation or setup
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: Station or bus stop
+      description: If relevant, include the station name/code or bus stop ID. Leave blank if you'd rather not share it.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: What happened?
+      description: Include steps to reproduce, what you expected, and what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics, logs, or screenshots
+      description: Download diagnostics from the WMATA entry's menu in Settings → Devices & services. Review attachments before sharing and remove keys or other private information from logs and screenshots.
+  - type: textarea
+    id: card
+    attributes:
+      label: Card YAML (if relevant)
+      description: Remove unrelated entities and private URLs.
+      render: yaml
