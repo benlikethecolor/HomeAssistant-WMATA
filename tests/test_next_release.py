@@ -139,10 +139,31 @@ class PlanningApiTest(unittest.IsolatedAsyncioTestCase):
                     "when": requested.isoformat(),
                 },
             )
-        self.assertEqual(
-            len(conn.send_result.call_args.args[1]["planning"]["journeys"]), 1
-        )
+        planning = conn.send_result.call_args.args[1]["planning"]
+        self.assertEqual(len(planning["journeys"]), 1)
+        self.assertFalse(planning["unavailable"])
         api.trains.assert_not_awaited()
+        # A failed download is reported as such, not as "no trips found".
+        api.rail_schedule_nowait.return_value = None
+        with patch(
+            "custom_components.wmata.websocket.er.async_get", return_value=registry
+        ):
+            await inspect.unwrap(plan_trip)(
+                hass,
+                conn,
+                {
+                    "id": 2,
+                    "entity_id": "sensor.trip",
+                    "origin": "C04",
+                    "destination": "A01",
+                    "mode": "depart_at",
+                    "when": requested.isoformat(),
+                },
+            )
+        planning = conn.send_result.call_args.args[1]["planning"]
+        self.assertEqual(planning["journeys"], [])
+        self.assertTrue(planning["unavailable"])
+        self.assertFalse(planning["pending"])
 
     async def test_outage_filter_requires_a_current_feed_and_invalid_dates_are_rejected(
         self,

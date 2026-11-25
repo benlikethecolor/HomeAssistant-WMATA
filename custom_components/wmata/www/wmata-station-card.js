@@ -2279,9 +2279,11 @@ const appearanceChoices = (current) =>
       this._showAccessibility(result.accessibility);
       this._status.textContent = plan.pending
         ? "Timetable loading. This plan will refresh automatically."
-        : plan.journeys.length
-          ? "Schedule estimates only — live predictions are not used for a future trip."
-          : "No scheduled trip was found in the six-hour search window or the published feed does not cover that date.";
+        : plan.unavailable
+          ? "The rail timetable couldn't be loaded. This plan will try again shortly."
+          : plan.journeys.length
+            ? "Schedule estimates only — live predictions are not used for a future trip."
+            : "No scheduled trip was found in the six-hour search window or the published feed does not cover that date.";
       this._scheduled.textContent =
         "Times include transfer waits and your platform-change allowance.";
       const clock = (value) =>
@@ -2298,7 +2300,7 @@ const appearanceChoices = (current) =>
           element(
             "summary",
             null,
-            `${index === 0 ? (plan.mode === "arrive_by" ? "Latest departure" : "Earliest arrival") + " · " : ""}${clock(journey.departure_at)} → ${clock(journey.arrival_at)} · ${Math.ceil(journey.trip_minutes)} min · ${journey.transfers} transfers`,
+            `${index === 0 ? (plan.mode === "arrive_by" ? "Latest departure" : "Earliest arrival") + " · " : ""}${clock(journey.departure_at)} → ${clock(journey.arrival_at)} · ${Math.ceil(journey.trip_minutes)} min · ${journey.transfers === 0 ? "direct" : journey.transfers === 1 ? "1 transfer" : journey.transfers + " transfers"}`,
           ),
         );
         details.append(element("p", "status", journey.route_description));

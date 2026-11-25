@@ -2413,8 +2413,28 @@ test("future planning sends a timestamp and renders scheduled itineraries withou
   assert.equal(request.transfer_buffer, 3);
   assert.ok(Number.isFinite(Date.parse(request.when)));
   assert.match(f.plannerRoot.textContent, /Latest departure/);
+  assert.match(
+    f.plannerRoot.querySelector(".scheduled-trip summary").textContent,
+    / · 1 transfer$/,
+  );
+  assert.doesNotMatch(f.plannerRoot.textContent, /1 transfers/);
   assert.match(f.plannerRoot.textContent, /Schedule estimates only/);
   assert.equal(f.planner._board, null);
+});
+
+test("a timetable that failed to load is reported differently from no trips found", async (t) => {
+  let unavailable = true;
+  const f = await plannerFixture(t, () => ({
+    planning: { mode: "depart_at", pending: false, unavailable, journeys: [] },
+    accessibility: { preference: "standard" },
+  }));
+  f.planner._timeMode.value = "depart_at";
+  await planQuickTrip(f);
+  const status = () => f.plannerRoot.querySelector(".status").textContent;
+  assert.match(status(), /couldn't be loaded/);
+  unavailable = false;
+  await f.planner._refresh();
+  assert.match(status(), /No scheduled trip was found/);
 });
 
 test("accessibility controls show warnings and report unavailable feeds without exposing errors", async (t) => {

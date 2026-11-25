@@ -334,6 +334,8 @@ async def plan_trip(hass, connection, msg):
                     "mode": mode,
                     "requested_at": requested.isoformat(),
                     "pending": api.rail_schedule_pending,
+                    # Not loading and not loaded: the last download failed.
+                    "unavailable": schedule is None and not api.rail_schedule_pending,
                     "journeys": journeys,
                 },
                 "accessibility": info,
