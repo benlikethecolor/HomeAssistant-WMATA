@@ -64,6 +64,14 @@ The dashboard cards come with the integration, so there's nothing else to instal
 
 All three have a visual editor. The YAML in the sections below is there if you prefer it.
 
+### Starter dashboard
+
+[Download the starter dashboard YAML](examples/dashboard.yaml). Add Metro Center
+and the systemwide map, replace the example entity IDs with your own, and paste it
+into a new dashboard's raw configuration editor. It includes a multi-line board,
+a transfer journey planner, the map, and an optional Health card. For notifications,
+use the [time-to-leave blueprint](#automations).
+
 ### The two setups most people want
 
 **The next trains at my station.** Add your station, add a WMATA Station Board card, and pick the station in the card's editor. That's the whole thing. If you only care about trains heading one way, tap a direction chip on the card, such as Eastbound, or [pin the filter in YAML](#station-board).
@@ -152,6 +160,19 @@ reverse_after: "12:00"
 Which entity you pick doesn't limit the stations you can search. It only decides whose API key is used.
 
 The planner looks at routes with up to three transfers and puts the one that gets you there earliest on top, even when another route has fewer changes. Open **Compare routes** to see the alternatives and how much later each one arrives. Tap a route to look at it in detail, and **Use fastest option** takes you back to the automatic pick.
+
+Open **Time and accessibility** on the planner to choose **Depart at** or
+**Arrive by**, then a date and local time within the next seven days. These plans
+use published schedules, not live predictions, and search a six-hour window.
+The published feed must cover the requested date. Depart-at ranks by earliest
+arrival; arrive-by ranks by latest departure that meets the deadline. Times include
+transfer waits and the card's platform-change allowance.
+
+Elevator information defaults to warnings for the origin, destination, and transfer
+stations. **Avoid stations with reported elevator outages** excludes routes using
+those stations. It requires a current elevator feed and is a conservative filter,
+not certification of a step-free route. Other entrances or elevators might still
+work, and current outages do not predict future elevator availability. Increase the transfer allowance if you need more time between platforms.
 
 A few things worth knowing about the times:
 
@@ -362,3 +383,21 @@ Notes on running the tests, cutting a release, and rebuilding the map data are i
 - [@walrus416](https://github.com/walrus416), whose [ha-wmata](https://github.com/walrus416/ha-wmata) was the starting point
 - [@msp1974](https://github.com/msp1974), for the [integration examples](https://github.com/msp1974/HAIntegrationExamples)
 - [@wtadler](https://github.com/wtadler), for the bus stop ID tips
+
+## Health and development builds
+
+Each entry has an optional **Health** diagnostic sensor, disabled by default.
+Enable it under the entry's Entities list. It stays readable when predictions fail
+and reports `healthy`, `degraded`, or `rate_limited`, with the last successful
+request, error type, JSON requests sent and failed attempts, cooldown, timetable availability,
+incident-feed freshness, and metadata refresh status. These details also appear in downloaded diagnostics.
+Counters are shared by API key and reset when HA restarts. It makes no extra API requests.
+
+Station and bus-stop metadata refresh hourly. A failed refresh keeps the last
+working metadata and retries in five minutes. New rail line/direction entities
+are added automatically; withdrawn lines become unavailable while existing entity
+IDs remain registered for automations.
+
+Development and beta testing follow the [release checklist](docs/RELEASING.md).
+A beta is optional and does not replace the stable release. Back up HA and use a
+separate test instance for development builds.

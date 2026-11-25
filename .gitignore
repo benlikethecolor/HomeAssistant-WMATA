@@ -400,3 +400,5 @@ FodyWeavers.xsd
 *.sln.iml
 
 .DS_STORE
+# Local health-monitor output
+soak*.ndjson

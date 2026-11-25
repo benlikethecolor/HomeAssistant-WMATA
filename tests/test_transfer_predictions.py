@@ -19,6 +19,7 @@ def fixture(route=None):
     api = SimpleNamespace(
         _state=object(),
         rail_alerts=AsyncMock(return_value=[]),
+        unit_outages=AsyncMock(return_value=[]),
         alert_status=MagicMock(return_value=None),
         rail_schedule_pending=False,
         rail_schedule_nowait=MagicMock(return_value=None),

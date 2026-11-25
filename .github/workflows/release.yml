@@ -29,6 +29,7 @@ jobs:
     outputs:
       tag: ${{ steps.prepare.outputs.tag }}
       version: ${{ steps.prepare.outputs.version }}
+      prerelease: ${{ steps.prepare.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -48,12 +49,16 @@ jobs:
           from pathlib import Path
           data = json.loads(Path('/tmp/release.json').read_text())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              for key in ('tag', 'version'):
+              for key in ('tag', 'version', 'prerelease'):
                   output.write(f'{key}={data[key]}\n')
           PY
           if [ "$CREATE_DRAFT" = "true" ]; then
             test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
-            git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+            if [[ "$RELEASE_TAG" == *-* ]]; then
+              git merge-base --is-ancestor "$GITHUB_SHA" origin/main || git merge-base --is-ancestor "$GITHUB_SHA" origin/beta
+            else
+              git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+            fi
           fi
       - name: Validate with hassfest
         uses: home-assistant/actions/hassfest@master
@@ -84,7 +89,11 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.package.outputs.tag }}
           VERSION: ${{ needs.package.outputs.version }}
+          PRERELEASE: ${{ needs.package.outputs.prerelease }}
         run: |
-          gh release create "$RELEASE_TAG" "dist/wmata-$VERSION.zip" \
-            --verify-tag --draft --title "WMATA $VERSION" \
-            --notes-file dist/release-notes.md --generate-notes
+          args=("$RELEASE_TAG" "dist/wmata-$VERSION.zip" --verify-tag --draft
+                --title "WMATA $VERSION" --notes-file dist/release-notes.md --generate-notes)
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease --latest=false)
+          fi
+          gh release create "${args[@]}"

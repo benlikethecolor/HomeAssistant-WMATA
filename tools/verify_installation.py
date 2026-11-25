@@ -552,6 +552,12 @@ async def verify(scenario):
                     assert await hass.config_entries.async_unload(entry.entry_id)
                     assert await hass.config_entries.async_setup(entry.entry_id)
                     await wait_loaded(entry)
+                # Reload uses the real entry lifecycle and must preserve entity identity.
+                stable_entity_id = board_id
+                assert await hass.config_entries.async_reload(rail.entry_id)
+                await wait_loaded(rail)
+                assert hass.states.get(stable_entity_id) is not None
+                assert rail.data["api_key"] == "fixture-key"
                 print(
                     json.dumps(
                         {

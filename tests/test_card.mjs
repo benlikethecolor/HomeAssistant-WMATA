@@ -2371,3 +2371,198 @@ test("the planner shows live results while the timetable is loading and marks st
   );
   assert.ok(f.planner._board);
 });
+
+test("future planning sends a timestamp and renders scheduled itineraries without live highlights", async (t) => {
+  const when = new Date(Date.now() + 3600000).toISOString();
+  const f = await plannerFixture(t, () => ({
+    planning: {
+      mode: "arrive_by",
+      pending: false,
+      journeys: [
+        {
+          departure_at: when,
+          arrival_at: new Date(Date.parse(when) + 900000).toISOString(),
+          trip_minutes: 15,
+          transfers: 1,
+          route_description: "Orange then Red",
+          legs: [
+            {
+              from_name: "Foggy Bottom-GWU",
+              to_name: "Metro Center",
+              line_name: "Orange",
+              departure_at: when,
+              arrival_at: when,
+              ride_minutes: 4,
+              wait_minutes: 0,
+            },
+          ],
+        },
+      ],
+    },
+    accessibility: {
+      preference: "warn",
+      status: { stale: false },
+      warnings: [],
+    },
+  }));
+  f.planner._timeMode.value = "arrive_by";
+  f.planner._whenInput.value = "2026-12-01T12:30";
+  await planQuickTrip(f);
+  const request = f.requests.find((r) => r.type === "wmata/plan_trip");
+  assert.equal(request.mode, "arrive_by");
+  assert.equal(request.transfer_buffer, 3);
+  assert.ok(Number.isFinite(Date.parse(request.when)));
+  assert.match(f.plannerRoot.textContent, /Latest departure/);
+  assert.match(
+    f.plannerRoot.querySelector(".scheduled-trip summary").textContent,
+    / · 1 transfer$/,
+  );
+  assert.doesNotMatch(f.plannerRoot.textContent, /1 transfers/);
+  assert.match(f.plannerRoot.textContent, /Schedule estimates only/);
+  assert.equal(f.planner._board, null);
+});
+
+test("future trips only warn about elevators on the trips that use those stations", async (t) => {
+  const when = new Date(Date.now() + 3600000).toISOString();
+  const later = new Date(Date.parse(when) + 900000).toISOString();
+  const trip = (via, minutes) => ({
+    departure_at: when,
+    arrival_at: later,
+    trip_minutes: minutes,
+    transfers: 1,
+    route_description: `Change at ${via}`,
+    legs: [
+      {
+        from_name: "Union Station",
+        to_name: via,
+        line_name: "Red",
+        departure_at: when,
+        arrival_at: when,
+        ride_minutes: 4,
+        wait_minutes: 0,
+      },
+      {
+        from_name: via,
+        to_name: "Huntington",
+        line_name: "Yellow",
+        departure_at: when,
+        arrival_at: later,
+        ride_minutes: 20,
+        wait_minutes: 3,
+      },
+    ],
+  });
+  const f = await plannerFixture(t, () => ({
+    planning: {
+      mode: "depart_at",
+      pending: false,
+      journeys: [trip("Gallery Pl-Chinatown", 38), trip("Metro Center", 53)],
+    },
+    accessibility: {
+      preference: "warn",
+      status: { stale: false },
+      warnings: [
+        {
+          station_name: "Metro Center",
+          location: "Elevator between platforms",
+          reason: "Other",
+        },
+      ],
+    },
+  }));
+  f.planner._timeMode.value = "depart_at";
+  await planQuickTrip(f);
+  // The recommended trip changes at Gallery Place, so no banner.
+  assert.equal(
+    f.plannerRoot.querySelector(".accessibility-status").textContent,
+    "",
+  );
+  const summaries = [
+    ...f.plannerRoot.querySelectorAll(".scheduled-trip summary"),
+  ].map((s) => s.textContent);
+  assert.doesNotMatch(summaries[0], /elevator/);
+  assert.match(summaries[1], / · elevator outage reported$/);
+});
+
+test("elevator warnings leave out WMATA's uninformative reason", async (t) => {
+  const f = await plannerFixture(t, () => ({
+    planning: {
+      mode: "depart_at",
+      pending: false,
+      journeys: [],
+    },
+    accessibility: {
+      preference: "warn",
+      status: { stale: false },
+      warnings: [
+        {
+          station_name: "Metro Center",
+          location: "Street elevator",
+          reason: "Other",
+        },
+        {
+          station_name: "Metro Center",
+          location: "Platform elevator",
+          reason: "Repair",
+        },
+      ],
+    },
+  }));
+  f.planner._timeMode.value = "depart_at";
+  await planQuickTrip(f);
+  const lines = [
+    ...f.plannerRoot.querySelectorAll(".accessibility-status .alert"),
+  ].map((n) => n.textContent);
+  assert.deepEqual(lines, [
+    "Metro Center: Street elevator.",
+    "Metro Center: Platform elevator (Repair).",
+  ]);
+});
+
+test("a timetable that failed to load is reported differently from no trips found", async (t) => {
+  let unavailable = true;
+  const f = await plannerFixture(t, () => ({
+    planning: { mode: "depart_at", pending: false, unavailable, journeys: [] },
+    accessibility: { preference: "standard" },
+  }));
+  f.planner._timeMode.value = "depart_at";
+  await planQuickTrip(f);
+  const status = () => f.plannerRoot.querySelector(".status").textContent;
+  assert.match(status(), /couldn't be loaded/);
+  unavailable = false;
+  await f.planner._refresh();
+  assert.match(status(), /No scheduled trip was found/);
+});
+
+test("accessibility controls show warnings and report unavailable feeds without exposing errors", async (t) => {
+  let fail = false;
+  const f = await plannerFixture(t, () => {
+    if (fail)
+      throw { code: "accessibility_unavailable", message: "private response" };
+    return {
+      ...quickTripResponse(),
+      accessibility: {
+        preference: "warn",
+        status: { stale: false },
+        warnings: [
+          {
+            station_name: "Metro Center",
+            location: "Street elevator",
+            reason: "Maintenance",
+          },
+        ],
+      },
+    };
+  });
+  await planQuickTrip(f);
+  assert.match(
+    f.plannerRoot.querySelector(".accessibility-status").textContent,
+    /Metro Center.*Street elevator/,
+  );
+  fail = true;
+  f.planner._accessibility.value = "avoid";
+  await f.planner._plan();
+  assert.match(f.planner._status.textContent, /Elevator status is unavailable/);
+  assert.doesNotMatch(f.plannerRoot.textContent, /private response/);
+  assert.equal(f.requests.at(-1).accessibility, "avoid");
+});

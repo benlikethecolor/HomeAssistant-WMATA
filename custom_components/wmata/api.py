@@ -38,6 +38,10 @@ class RequestState:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     next_request: float = 0
     blocked_until: float = 0
+    request_count: int = 0
+    failure_count: int = 0
+    last_success: str | None = None
+    last_error: str | None = None
     stations: list[dict[str, Any]] | None = None
     stations_expiry: float = 0
     rail_times: dict[tuple[str, str], float] | None = None
@@ -73,8 +77,36 @@ class WmataApi:
     async def get(self, path: str, **params: str) -> dict[str, Any]:
         """Request JSON without exposing credentials or response bodies in errors."""
         async with self._state.lock:
-            await self._pace()
-            return await self._request(path, params)
+            try:
+                await self._pace()
+                self._state.request_count += 1
+                result = await self._request(path, params)
+            except (APIAuthError, APIConnectionError) as err:
+                self._state.failure_count += 1
+                self._state.last_error = type(err).__name__
+                raise
+            self._state.last_success = datetime.now(UTC).isoformat()
+            self._state.last_error = None
+            return result
+
+    def health(self):
+        """Credential-free request and cache status for diagnostics."""
+        cooldown = max(0, self._state.blocked_until - asyncio.get_running_loop().time())
+        return {
+            "last_successful_request": self._state.last_success,
+            "last_error_type": self._state.last_error,
+            "requests": self._state.request_count,
+            "failures": self._state.failure_count,
+            "rate_limit_seconds": round(cooldown),
+            "timetable": "loading"
+            if self.rail_schedule_pending
+            else "ready"
+            if self.rail_schedule_ready()
+            else "not_loaded",
+            "feeds": {
+                kind: self.alert_status(kind) for kind in self._state.alert_checks
+            },
+        }
 
     async def _pace(self):
         loop = asyncio.get_running_loop()
