@@ -15,7 +15,7 @@ jobs:
       matrix:
         homeassistant: ["2024.12.5", "2025.6.3", "2026.1.3", stable]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Test packaged integration on Home Assistant
         env:
           HA_VERSION: ${{ matrix.homeassistant }}
@@ -27,8 +27,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -38,8 +38,8 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm

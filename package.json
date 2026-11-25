@@ -8,6 +8,6 @@
   },
   "devDependencies": {
     "happy-dom": "21.0.4",
-    "prettier": "3.6.2"
+    "prettier": "3.10.1"
   }
 }
