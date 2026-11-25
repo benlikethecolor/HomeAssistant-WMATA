@@ -1824,7 +1824,7 @@ const appearanceChoices = (current) =>
         ha-card{display:block;border:var(--ha-card-border-width,1px) solid var(--divider-color,#ddd);border-radius:var(--ha-card-border-radius,24px);background:var(--ha-card-background,var(--card-background-color,#fff));box-shadow:var(--ha-card-box-shadow,none)}
         .comparison-summary{font-size:14px;line-height:1.6;margin:12px 0 6px}.comparison-note{font-size:12px;line-height:1.5;color:var(--secondary-text-color)}.route-comparison{margin-top:12px}.route-comparison summary{cursor:pointer;font-size:13px;padding:8px 0}.route-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px}.route-choice{text-align:left;display:flex;flex-direction:column;gap:6px}.route-choice strong{font-size:12px}.route-choice span,.route-choice small{font-size:11px;line-height:1.5}.route-choice[aria-pressed=true]{border-color:var(--primary-color,#0076be);background:color-mix(in srgb,var(--primary-color,#0076be) 10%,transparent)}
         .planner-form{padding:16px}.planner-title{font-size:20px;font-weight:400;margin:0 0 12px}.fields{display:flex;gap:12px;flex-wrap:wrap}label{flex:1;min-width:150px;font-size:12px;line-height:1.8;color:var(--secondary-text-color,#64717b)}input,select{box-sizing:border-box;width:100%;font:inherit;font-size:14px;padding:11px 10px;border:1px solid var(--divider-color,#ccc);border-radius:8px;background:var(--secondary-background-color,#f4f6f7);color:var(--primary-text-color,#222)}
-        .commute-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.commute-route{flex:1;min-width:160px;font-size:15px;line-height:1.5}.reverse[aria-pressed=true]{border-color:var(--primary-color,#0076be)}.search[hidden],label[hidden]{display:none}.trip-options{margin-top:12px}.trip-options summary,.scheduled-trip summary{cursor:pointer;font-size:13px;padding:8px 0}.scheduled-trip{border-top:1px solid var(--divider-color,#ddd);padding:8px 0}.commute-bar+.search{margin-top:12px}
+        .commute-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.commute-route{flex:1;min-width:160px;font-size:15px;line-height:1.5}.reverse[aria-pressed=true]{border-color:var(--primary-color,#0076be)}.search[hidden],label[hidden]{display:none}.trip-options{margin-top:12px}.when-label{min-width:220px}.accessibility-note{font-size:12px;line-height:1.5;color:var(--secondary-text-color,#64717b);margin:8px 0 0}.trip-options summary,.scheduled-trip summary{cursor:pointer;font-size:13px;padding:8px 0}.scheduled-trip{border-top:1px solid var(--divider-color,#ddd);padding:8px 0}.commute-bar+.search{margin-top:12px}
         .actions{display:flex;gap:8px;margin-top:12px}button{font:inherit;font-size:13px;border:1px solid var(--divider-color,#ccc);border-radius:9px;padding:9px 14px;background:transparent;color:inherit;cursor:pointer}button[type=submit]{background:var(--primary-color,#0076be);color:var(--text-primary-color,#fff);border-color:transparent}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--primary-color,#0076be);outline-offset:2px}.status,.scheduled{font-size:12px;line-height:1.6;margin-top:12px;color:var(--secondary-text-color,#64717b)}.result{margin-top:12px}.result:empty{display:none}
       </style>`;
       const card = element("ha-card");
@@ -1903,9 +1903,10 @@ const appearanceChoices = (current) =>
         this._timeMode.append(option);
       }
       modeLabel.append(this._timeMode);
+      // Wide enough that the date and time aren't cut off; wraps on phones.
       this._whenLabel = element(
         "label",
-        null,
+        "when-label",
         "Date and time (your browser's timezone)",
       );
       this._whenInput = element("input");
@@ -2276,7 +2277,21 @@ const appearanceChoices = (current) =>
       this._routeOptions.replaceChildren();
       this._alertHost.replaceChildren();
       const plan = result.planning;
-      this._showAccessibility(result.accessibility);
+      // The banner describes the recommended trip, as the live view does for its
+      // chosen route. Other trips mark their own outages below.
+      this._showAccessibility(result.accessibility, plan.journeys[0]);
+      const outageStations = new Set(
+        (result.accessibility?.preference === "standard"
+          ? []
+          : result.accessibility?.warnings || []
+        ).map((unit) => unit.station_name),
+      );
+      const usesOutage = (journey) =>
+        journey.legs.some(
+          (leg) =>
+            outageStations.has(leg.from_name) ||
+            outageStations.has(leg.to_name),
+        );
       this._status.textContent = plan.pending
         ? "Timetable loading. This plan will refresh automatically."
         : plan.unavailable
@@ -2300,7 +2315,7 @@ const appearanceChoices = (current) =>
           element(
             "summary",
             null,
-            `${index === 0 ? (plan.mode === "arrive_by" ? "Latest departure" : "Earliest arrival") + " · " : ""}${clock(journey.departure_at)} → ${clock(journey.arrival_at)} · ${Math.ceil(journey.trip_minutes)} min · ${journey.transfers === 0 ? "direct" : journey.transfers === 1 ? "1 transfer" : journey.transfers + " transfers"}`,
+            `${index === 0 ? (plan.mode === "arrive_by" ? "Latest departure" : "Earliest arrival") + " · " : ""}${clock(journey.departure_at)} → ${clock(journey.arrival_at)} · ${Math.ceil(journey.trip_minutes)} min · ${journey.transfers === 0 ? "direct" : journey.transfers === 1 ? "1 transfer" : journey.transfers + " transfers"}${index > 0 && usesOutage(journey) ? " · elevator outage reported" : ""}`,
           ),
         );
         details.append(element("p", "status", journey.route_description));
@@ -2347,7 +2362,7 @@ const appearanceChoices = (current) =>
           element(
             "p",
             "alert",
-            `${unit.station_name}: ${unit.location || "Elevator outage reported"}. ${unit.reason || ""}`,
+            `${unit.station_name}: ${unit.location || "Elevator outage reported"}${unit.reason && !/^other$/i.test(unit.reason) ? ` (${unit.reason})` : ""}.`,
           ),
         );
       if (info.preference === "avoid")

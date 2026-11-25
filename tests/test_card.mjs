@@ -2422,6 +2422,103 @@ test("future planning sends a timestamp and renders scheduled itineraries withou
   assert.equal(f.planner._board, null);
 });
 
+test("future trips only warn about elevators on the trips that use those stations", async (t) => {
+  const when = new Date(Date.now() + 3600000).toISOString();
+  const later = new Date(Date.parse(when) + 900000).toISOString();
+  const trip = (via, minutes) => ({
+    departure_at: when,
+    arrival_at: later,
+    trip_minutes: minutes,
+    transfers: 1,
+    route_description: `Change at ${via}`,
+    legs: [
+      {
+        from_name: "Union Station",
+        to_name: via,
+        line_name: "Red",
+        departure_at: when,
+        arrival_at: when,
+        ride_minutes: 4,
+        wait_minutes: 0,
+      },
+      {
+        from_name: via,
+        to_name: "Huntington",
+        line_name: "Yellow",
+        departure_at: when,
+        arrival_at: later,
+        ride_minutes: 20,
+        wait_minutes: 3,
+      },
+    ],
+  });
+  const f = await plannerFixture(t, () => ({
+    planning: {
+      mode: "depart_at",
+      pending: false,
+      journeys: [trip("Gallery Pl-Chinatown", 38), trip("Metro Center", 53)],
+    },
+    accessibility: {
+      preference: "warn",
+      status: { stale: false },
+      warnings: [
+        {
+          station_name: "Metro Center",
+          location: "Elevator between platforms",
+          reason: "Other",
+        },
+      ],
+    },
+  }));
+  f.planner._timeMode.value = "depart_at";
+  await planQuickTrip(f);
+  // The recommended trip changes at Gallery Place, so no banner.
+  assert.equal(
+    f.plannerRoot.querySelector(".accessibility-status").textContent,
+    "",
+  );
+  const summaries = [
+    ...f.plannerRoot.querySelectorAll(".scheduled-trip summary"),
+  ].map((s) => s.textContent);
+  assert.doesNotMatch(summaries[0], /elevator/);
+  assert.match(summaries[1], / · elevator outage reported$/);
+});
+
+test("elevator warnings leave out WMATA's uninformative reason", async (t) => {
+  const f = await plannerFixture(t, () => ({
+    planning: {
+      mode: "depart_at",
+      pending: false,
+      journeys: [],
+    },
+    accessibility: {
+      preference: "warn",
+      status: { stale: false },
+      warnings: [
+        {
+          station_name: "Metro Center",
+          location: "Street elevator",
+          reason: "Other",
+        },
+        {
+          station_name: "Metro Center",
+          location: "Platform elevator",
+          reason: "Repair",
+        },
+      ],
+    },
+  }));
+  f.planner._timeMode.value = "depart_at";
+  await planQuickTrip(f);
+  const lines = [
+    ...f.plannerRoot.querySelectorAll(".accessibility-status .alert"),
+  ].map((n) => n.textContent);
+  assert.deepEqual(lines, [
+    "Metro Center: Street elevator.",
+    "Metro Center: Platform elevator (Repair).",
+  ]);
+});
+
 test("a timetable that failed to load is reported differently from no trips found", async (t) => {
   let unavailable = true;
   const f = await plannerFixture(t, () => ({
